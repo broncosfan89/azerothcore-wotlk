@@ -8464,6 +8464,12 @@ void Spell::SetSpellValue(SpellValueMod mod, int32 value)
     }
 }
 
+void Spell::SetSpellMasteryCastTime(int32 castTime)
+{
+    m_casttime = castTime > 0 ? castTime : 0;
+    ReSetTimer();
+}
+
 void Spell::PrepareTargetProcessing()
 {
     CheckEffectExecuteData();

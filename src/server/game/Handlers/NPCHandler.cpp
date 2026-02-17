@@ -45,6 +45,20 @@ enum StableResultCode
     STABLE_ERR_EXOTIC       = 0x0C,                         // "you are unable to control exotic creatures"
 };
 
+namespace
+{
+uint32 constexpr SPELL_MAGE_FIREBALL_RANK_1 = 133;
+
+bool IsSpellMasteryManagedTrainerSpell(uint32 spellId)
+{
+    uint32 firstRank = sSpellMgr->GetFirstSpellInChain(spellId);
+    if (!firstRank)
+        firstRank = spellId;
+
+    return firstRank == SPELL_MAGE_FIREBALL_RANK_1;
+}
+}
+
 void WorldSession::HandleTabardVendorActivateOpcode(WorldPacket& recvData)
 {
     ObjectGuid guid;
@@ -130,6 +144,12 @@ void WorldSession::HandleTrainerBuySpellOpcode(WorldPackets::NPC::TrainerBuySpel
     Trainer::Trainer* trainer = sObjectMgr->GetTrainer(npc->GetEntry());
     if (!trainer)
         return;
+
+    if (IsSpellMasteryManagedTrainerSpell(packet.SpellID))
+    {
+        SendAreaTriggerMessage("Spell Mastery: Fireball ranks are disabled. Keep using Rank 1 Fireball.");
+        return;
+    }
 
     trainer->TeachSpell(npc, _player, packet.SpellID);
 }

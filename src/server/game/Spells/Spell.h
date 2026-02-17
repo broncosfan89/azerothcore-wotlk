@@ -556,6 +556,7 @@ public:
     UsedSpellMods m_appliedMods;
 
     int32 GetCastTime() const { return m_casttime; }
+    void SetSpellMasteryCastTime(int32 castTime);
     bool IsAutoRepeat() const { return m_autoRepeat; }
     void SetAutoRepeat(bool rep) { m_autoRepeat = rep; }
     void ReSetTimer() { m_timer = m_casttime > 0 ? m_casttime : 0; }
