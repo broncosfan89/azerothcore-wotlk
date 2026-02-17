@@ -30,7 +30,9 @@
 #include "SpellScriptLoader.h"
 #include "World.h"
 #include "WorldSession.h"
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <sstream>
 #include <unordered_map>
@@ -69,7 +71,7 @@ struct SpellMasteryProgress
 
 struct SpellMasteryEffects
 {
-    int32 FlatDamageBonus = 0;
+    float DamageBonusPct = 0.0f;
     float BonusCritChancePct = 0.0f;
     float SplashDamagePct = 0.0f;
     float DuplicateChancePct = 0.0f;
@@ -277,19 +279,22 @@ SpellMasteryEffects BuildFireballMasteryEffects(SpellMasteryProgress const& prog
     uint8 goldLevel = GetEffectiveTierLevel(progress, SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = GetEffectiveTierLevel(progress, SPELL_MASTERY_TIER_DIAMOND, config);
 
-    // Iron: flat damage by level
-    effects.FlatDamageBonus += int32(ironLevel) * 2;
+    // Iron: heavy percent damage ramp so rank-1 Fireball can stay competitive.
+    effects.DamageBonusPct += float(ironLevel) * 55.0f;
 
-    // Bronze: crit chance starts at 5%, +1% each level, plus additional flat damage
+    // Bronze: crit chance starts at 5%, +2% each level, plus additional percent damage
     if (bronzeLevel > 0)
     {
-        effects.BonusCritChancePct = 5.0f + float(bronzeLevel - 1);
-        effects.FlatDamageBonus += int32(bronzeLevel);
+        effects.BonusCritChancePct = 5.0f + (float(bronzeLevel - 1) * 2.0f);
+        effects.DamageBonusPct += float(bronzeLevel) * 35.0f;
     }
 
-    // Silver: splash 10% to 30%
+    // Silver: stronger splash and additional direct-damage scaling.
     if (silverLevel > 0)
-        effects.SplashDamagePct = 10.0f + (float(silverLevel - 1) * (20.0f / 9.0f));
+    {
+        effects.DamageBonusPct += float(silverLevel) * 25.0f;
+        effects.SplashDamagePct = 35.0f + (float(silverLevel - 1) * (45.0f / 9.0f)); // 35% -> 80%
+    }
 
     // Gold: duplicate chance 5% to 20%
     if (goldLevel > 0)
@@ -467,7 +472,18 @@ class spell_mage_fireball_mastery : public SpellScript
         if (!target || !_playerCaster->IsValidAttackTarget(target))
             return;
 
-        SetHitDamage(GetHitDamage() + _effects.FlatDamageBonus);
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        if (_effects.DamageBonusPct > 0.0f)
+        {
+            int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.DamageBonusPct / 100.0f))));
+            hitDamage = std::max(hitDamage, scaledDamage);
+        }
+
+        SetHitDamage(hitDamage);
+        _finalDirectDamage = hitDamage;
     }
 
     void HandleOnHit()
@@ -491,12 +507,16 @@ class spell_mage_fireball_mastery : public SpellScript
         if (_effects.SplashDamagePct <= 0.0f || !primaryTarget)
             return;
 
-        int32 const splashDamage = int32((float(GetHitDamage()) * _effects.SplashDamagePct) / 100.0f);
+        int32 const directDamage = std::max<int32>(GetHitDamage(), _finalDirectDamage);
+        if (directDamage <= 0)
+            return;
+
+        int32 const splashDamage = int32(std::lround((float(directDamage) * _effects.SplashDamagePct) / 100.0f));
         if (splashDamage <= 0)
             return;
 
         std::list<Unit*> nearbyUnits;
-        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(_playerCaster, primaryTarget, FIREBALL_SPLASH_RADIUS);
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(primaryTarget, _playerCaster, FIREBALL_SPLASH_RADIUS);
         Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(primaryTarget, nearbyUnits, check);
         Cell::VisitObjects(primaryTarget, searcher, FIREBALL_SPLASH_RADIUS);
 
@@ -505,7 +525,10 @@ class spell_mage_fireball_mastery : public SpellScript
             if (!nearbyTarget || nearbyTarget == primaryTarget || !_playerCaster->IsValidAttackTarget(nearbyTarget))
                 continue;
 
-            Unit::DealDamage(_playerCaster, nearbyTarget, splashDamage, nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_FIRE);
+            SpellNonMeleeDamage splashInfo(_playerCaster, nearbyTarget, GetSpellInfo(), GetSpellInfo()->SchoolMask);
+            splashInfo.damage = splashDamage;
+            _playerCaster->SendSpellNonMeleeDamageLog(&splashInfo);
+            _playerCaster->DealSpellDamage(&splashInfo, false);
         }
     }
 
@@ -552,6 +575,7 @@ private:
     SpellMasteryProgress _progress;
     SpellMasteryEffects _effects;
     bool _isTriggeredCast = false;
+    int32 _finalDirectDamage = 0;
 };
 
 class fireball_mastery_prepare_all_spell_script : public AllSpellScript
