@@ -18,6 +18,7 @@
 #include "AllSpellScript.h"
 #include "Cell.h"
 #include "CellImpl.h"
+#include "Chat.h"
 #include "DatabaseEnv.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
@@ -27,9 +28,11 @@
 #include "SpellMgr.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "World.h"
 #include "WorldSession.h"
 #include <array>
 #include <cstdint>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
 
@@ -95,10 +98,11 @@ struct MasteryCacheKeyHash
 
 std::array<ManagedSpellConfig, 1> const ManagedSpellConfigs =
 { {
-    { SPELL_MAGE_FIREBALL_RANK_1, 10, SPELL_MASTERY_TIER_DIAMOND, 10 }
+    { SPELL_MAGE_FIREBALL_RANK_1, 50, SPELL_MASTERY_TIER_DIAMOND, 10 }
 } };
 
 char constexpr SPELL_MASTERY_CHARACTER_TABLE[] = "character_spell_mastery";
+char constexpr SPELL_MASTERY_ADDON_PREFIX[] = "SMT";
 float constexpr FIREBALL_SPLASH_RADIUS = 8.0f;
 float constexpr FIREBALL_DUPLICATE_SCAN_RADIUS = 45.0f;
 uint32 constexpr FIREBALL_DUPLICATE_TARGET_CAP = 24;
@@ -134,6 +138,42 @@ char const* GetTierName(uint8 tier)
         case SPELL_MASTERY_TIER_DIAMOND: return "Diamond";
         default: return "Unknown";
     }
+}
+
+bool IsSpellMasteryFeedEnabled()
+{
+    return sWorld->getBoolConfig(CONFIG_CUSTOM_SPELL_MASTERY_FEED);
+}
+
+uint64 GetSpellMasteryNextXpThreshold(SpellMasteryProgress const& progress, ManagedSpellConfig const& config)
+{
+    if (progress.Tier >= config.MaxTier && progress.TierLevel >= config.MaxTierLevel)
+        return 0;
+
+    return 100ull * progress.Tier * progress.TierLevel;
+}
+
+void SendMasteryAddonMessage(Player* player, uint32 baseSpellId, uint8 tier, uint8 level, uint64 xp, uint64 next)
+{
+    if (!player || !player->GetSession() || !IsSpellMasteryFeedEnabled())
+        return;
+
+    std::ostringstream payload;
+    payload << "SPELL=" << baseSpellId
+        << ";TIER=" << uint32(tier)
+        << ";LVL=" << uint32(level)
+        << ";XP=" << xp
+        << ";NEXT=" << next;
+
+    WorldPacket data;
+    std::string const message = std::string(SPELL_MASTERY_ADDON_PREFIX) + "\t" + payload.str();
+    ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
+    player->GetSession()->SendPacket(&data);
+}
+
+void SendMasteryAddonMessageForProgress(Player* player, ManagedSpellConfig const& config, SpellMasteryProgress const& progress)
+{
+    SendMasteryAddonMessage(player, config.BaseSpellId, progress.Tier, progress.TierLevel, progress.Xp, GetSpellMasteryNextXpThreshold(progress, config));
 }
 
 SpellMasteryProgress SanitizeMasteryProgress(SpellMasteryProgress progress, ManagedSpellConfig const& config)
@@ -330,6 +370,7 @@ void AddSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint64 
     }
 
     SaveSpellMasteryProgressToDb(uint32(player->GetGUID().GetCounter()), config, progress);
+    SendMasteryAddonMessageForProgress(player, config, progress);
 
     if (leveled && player->GetSession())
         player->GetSession()->SendAreaTriggerMessage("Fireball Mastery advanced to {} Tier Level {}.", GetTierName(progress.Tier), progress.TierLevel);
@@ -351,7 +392,10 @@ public:
         EnforceAllManagedSpellBaseRanks(player);
 
         for (ManagedSpellConfig const& config : ManagedSpellConfigs)
-            GetOrLoadSpellMasteryProgress(player, config);
+        {
+            SpellMasteryProgress const& progress = GetOrLoadSpellMasteryProgress(player, config);
+            SendMasteryAddonMessageForProgress(player, config, progress);
+        }
     }
 
     void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override

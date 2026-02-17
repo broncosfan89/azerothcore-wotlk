@@ -1715,6 +1715,15 @@ PlayerStart.AllReputation = 0
 PlayerStart.CustomSpells = 0
 
 #
+#    Custom.SpellMasteryFeed
+#        Description: If enabled, sends Spell Mastery updates to addons via
+#                     addon whisper messages (prefix "SMT").
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+
+Custom.SpellMasteryFeed = 1
+
+#
 #    PlayerStart.MapsExplored
 #        Description: Characters start with all maps explored.
 #        Default:     0 - (Disabled)
