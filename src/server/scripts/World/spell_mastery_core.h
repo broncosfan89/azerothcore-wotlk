@@ -33,6 +33,7 @@ enum SpellMasteryConstants : uint32
     SPELL_MAGE_FLAMESTRIKE_RANK_3 = 8422,
     SPELL_DRUID_REJUVENATION_RANK_1 = 774,
     SPELL_DRUID_REJUVENATION_RANK_3 = 1430,
+    SPELL_DRUID_REJUVENATION_RANK_5 = 2091,
     SPELL_DRUID_REGROWTH_RANK_1 = 8936,
     SPELL_DRUID_REGROWTH_RANK_3 = 8939,
     SPELL_MAGE_IGNITE = 12654
@@ -51,10 +52,11 @@ struct ManagedSpellConfig
 {
     uint32 BaseSpellId;
     uint32 AllowedSpellId;
-    uint64 HitXpGain;
     uint8 MaxTier;
     uint8 MaxTierLevel;
 };
+
+inline constexpr uint64 SPELL_MASTERY_XP_PER_HIT = 100;
 
 struct SpellMasteryProgress
 {

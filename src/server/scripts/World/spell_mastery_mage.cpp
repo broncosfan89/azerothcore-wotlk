@@ -237,7 +237,7 @@ class spell_mage_fireball_mastery : public SpellScript
             return;
 
         if (!_isTriggeredCast)
-            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, _config->HitXpGain);
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
 
         if (_isTriggeredCast)
             return;
@@ -422,7 +422,7 @@ class spell_mage_flamestrike_mastery : public SpellScript
 
         if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, FLAMESTRIKE_XP_GUARD_MS))
         {
-            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, _config->HitXpGain);
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
             _xpAwarded = true;
         }
 

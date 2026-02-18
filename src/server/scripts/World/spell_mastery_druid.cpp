@@ -275,7 +275,7 @@ class spell_dru_rejuvenation_mastery : public SpellScript
             return;
 
         if (!_isTriggeredCast && target->GetHealth() < target->GetMaxHealth() && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, REJUVENATION_XP_GUARD_MS))
-            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, _config->HitXpGain);
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
 
         TryApplyDiamondBonusTick(target);
     }
@@ -525,7 +525,7 @@ class spell_dru_regrowth_mastery : public SpellScript
 
         if (!_xpAwarded && !_isTriggeredCast && target->GetHealth() < target->GetMaxHealth() && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, REGROWTH_XP_GUARD_MS))
         {
-            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, _config->HitXpGain);
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
             _xpAwarded = true;
         }
 
