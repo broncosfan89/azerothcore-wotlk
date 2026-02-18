@@ -335,7 +335,7 @@ class spell_dru_rejuvenation_mastery_aura : public AuraScript
     bool Load() override
     {
         Unit* caster = GetCaster();
-        if (!caster || !caster->IsPlayer())
+        if (!caster || !caster->IsPlayer() || !GetUnitOwner())
             return false;
 
         _playerCaster = caster->ToPlayer();
@@ -353,6 +353,10 @@ class spell_dru_rejuvenation_mastery_aura : public AuraScript
         if (!_playerCaster || amount <= 0)
             return;
 
+        Unit* target = GetUnitOwner();
+        if (!target)
+            return;
+
         float totalBonusPct = _effects.IronHealBonusPct;
         if (_effects.GoldStackHealPct > 0.0f && _effects.GoldMaxStacks > 1)
         {
@@ -360,7 +364,7 @@ class spell_dru_rejuvenation_mastery_aura : public AuraScript
             RejuvenationStackKey const key
             {
                 uint32(_playerCaster->GetGUID().GetCounter()),
-                uint32(GetTarget()->GetGUID().GetCounter())
+                uint32(target->GetGUID().GetCounter())
             };
 
             auto itr = RejuvenationStackStates.find(key);
@@ -384,7 +388,7 @@ class spell_dru_rejuvenation_mastery_aura : public AuraScript
         if (!_playerCaster || _effects.SilverSplashHealPct <= 0.0f)
             return;
 
-        Unit* primaryTarget = GetTarget();
+        Unit* primaryTarget = GetUnitOwner();
         if (!primaryTarget || !primaryTarget->IsAlive())
             return;
 
@@ -428,10 +432,14 @@ class spell_dru_rejuvenation_mastery_aura : public AuraScript
         if (!_playerCaster)
             return;
 
+        Unit* target = GetUnitOwner();
+        if (!target)
+            return;
+
         RejuvenationStackState& stackState = RejuvenationStackStates[
             {
                 uint32(_playerCaster->GetGUID().GetCounter()),
-                uint32(GetTarget()->GetGUID().GetCounter())
+                uint32(target->GetGUID().GetCounter())
             }];
 
         if (!stackState.Stacks)
@@ -444,7 +452,7 @@ class spell_dru_rejuvenation_mastery_aura : public AuraScript
     {
         DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dru_rejuvenation_mastery_aura::CalculatePeriodicHealAmount, EFFECT_0, SPELL_AURA_PERIODIC_HEAL);
         OnEffectPeriodic += AuraEffectPeriodicFn(spell_dru_rejuvenation_mastery_aura::HandlePeriodicTick, EFFECT_0, SPELL_AURA_PERIODIC_HEAL);
-        AfterEffectApply += AuraEffectApplyFn(spell_dru_rejuvenation_mastery_aura::HandleEffectApply, EFFECT_0, SPELL_AURA_PERIODIC_HEAL, AURA_EFFECT_HANDLE_REAL);
+        OnEffectApply += AuraEffectApplyFn(spell_dru_rejuvenation_mastery_aura::HandleEffectApply, EFFECT_0, SPELL_AURA_PERIODIC_HEAL, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
     }
 
 private:
@@ -585,7 +593,7 @@ class spell_dru_regrowth_mastery_aura : public AuraScript
     bool Load() override
     {
         Unit* caster = GetCaster();
-        if (!caster || !caster->IsPlayer())
+        if (!caster || !caster->IsPlayer() || !GetUnitOwner())
             return false;
 
         _playerCaster = caster->ToPlayer();
@@ -603,6 +611,10 @@ class spell_dru_regrowth_mastery_aura : public AuraScript
         if (!_playerCaster || amount <= 0)
             return;
 
+        Unit* target = GetUnitOwner();
+        if (!target)
+            return;
+
         float totalBonusPct = _effects.IronHotHealBonusPct;
         if (_effects.GoldStackHealPct > 0.0f && _effects.GoldMaxStacks > 1)
         {
@@ -610,7 +622,7 @@ class spell_dru_regrowth_mastery_aura : public AuraScript
             RegrowthStackKey const key
             {
                 uint32(_playerCaster->GetGUID().GetCounter()),
-                uint32(GetTarget()->GetGUID().GetCounter())
+                uint32(target->GetGUID().GetCounter())
             };
 
             auto itr = RegrowthStackStates.find(key);
@@ -634,7 +646,7 @@ class spell_dru_regrowth_mastery_aura : public AuraScript
         if (!_playerCaster || _effects.SilverSplashHealPct <= 0.0f)
             return;
 
-        Unit* primaryTarget = GetTarget();
+        Unit* primaryTarget = GetUnitOwner();
         if (!primaryTarget || !primaryTarget->IsAlive())
             return;
 
@@ -678,10 +690,14 @@ class spell_dru_regrowth_mastery_aura : public AuraScript
         if (!_playerCaster)
             return;
 
+        Unit* target = GetUnitOwner();
+        if (!target)
+            return;
+
         RegrowthStackState& stackState = RegrowthStackStates[
             {
                 uint32(_playerCaster->GetGUID().GetCounter()),
-                uint32(GetTarget()->GetGUID().GetCounter())
+                uint32(target->GetGUID().GetCounter())
             }];
 
         if (!stackState.Stacks)
@@ -694,7 +710,7 @@ class spell_dru_regrowth_mastery_aura : public AuraScript
     {
         DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dru_regrowth_mastery_aura::CalculatePeriodicHealAmount, EFFECT_1, SPELL_AURA_PERIODIC_HEAL);
         OnEffectPeriodic += AuraEffectPeriodicFn(spell_dru_regrowth_mastery_aura::HandlePeriodicTick, EFFECT_1, SPELL_AURA_PERIODIC_HEAL);
-        AfterEffectApply += AuraEffectApplyFn(spell_dru_regrowth_mastery_aura::HandleEffectApply, EFFECT_1, SPELL_AURA_PERIODIC_HEAL, AURA_EFFECT_HANDLE_REAL);
+        OnEffectApply += AuraEffectApplyFn(spell_dru_regrowth_mastery_aura::HandleEffectApply, EFFECT_1, SPELL_AURA_PERIODIC_HEAL, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
     }
 
 private:
