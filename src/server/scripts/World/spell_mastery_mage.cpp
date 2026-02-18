@@ -204,17 +204,20 @@ FireballMasteryEffects BuildFireballMasteryEffects(SpellMastery::SpellMasteryPro
     uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
 
-    effects.DamageBonusPct += float(ironLevel) * 55.0f;
+    // Global output ramp: every tier level contributes % damage all the way through Diamond.
+    effects.DamageBonusPct += float(ironLevel) * 20.0f;
+    effects.DamageBonusPct += float(bronzeLevel) * 20.0f;
+    effects.DamageBonusPct += float(silverLevel) * 20.0f;
+    effects.DamageBonusPct += float(goldLevel) * 25.0f;
+    effects.DamageBonusPct += float(diamondLevel) * 30.0f;
 
     if (bronzeLevel > 0)
     {
         effects.BonusCritChancePct = 5.0f + (float(bronzeLevel - 1) * 2.0f);
-        effects.DamageBonusPct += float(bronzeLevel) * 35.0f;
     }
 
     if (silverLevel > 0)
     {
-        effects.DamageBonusPct += float(silverLevel) * 25.0f;
         effects.SplashDamagePct = 35.0f + (float(silverLevel - 1) * (45.0f / 9.0f));
     }
 
@@ -240,7 +243,12 @@ FlamestrikeMasteryEffects BuildFlamestrikeMasteryEffects(SpellMastery::SpellMast
     uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
 
-    effects.DamageBonusPct = float(ironLevel) * 12.0f;
+    // Global output ramp: every tier level contributes % damage all the way through Diamond.
+    effects.DamageBonusPct += float(ironLevel) * 20.0f;
+    effects.DamageBonusPct += float(bronzeLevel) * 20.0f;
+    effects.DamageBonusPct += float(silverLevel) * 20.0f;
+    effects.DamageBonusPct += float(goldLevel) * 25.0f;
+    effects.DamageBonusPct += float(diamondLevel) * 30.0f;
 
     if (bronzeLevel > 0)
         effects.RadiusMultiplier += float(bronzeLevel) * 0.05f;
@@ -546,8 +554,6 @@ class spell_mage_flamestrike_mastery : public SpellScript
     void Register() override
     {
         OnEffectHitTarget += SpellEffectFn(spell_mage_flamestrike_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
-        OnEffectHitTarget += SpellEffectFn(spell_mage_flamestrike_mastery::HandleDirectDamage, EFFECT_1, SPELL_EFFECT_SCHOOL_DAMAGE);
-        OnEffectHitTarget += SpellEffectFn(spell_mage_flamestrike_mastery::HandleDirectDamage, EFFECT_2, SPELL_EFFECT_SCHOOL_DAMAGE);
         AfterHit += SpellHitFn(spell_mage_flamestrike_mastery::HandleOnHit);
     }
 

@@ -34,11 +34,12 @@
 
 namespace SpellMastery
 {
-std::array<ManagedSpellConfig, 6> const ManagedSpellConfigs =
+std::array<ManagedSpellConfig, 7> const ManagedSpellConfigs =
 { {
     { SPELL_MAGE_FIREBALL_RANK_1, SPELL_MAGE_FIREBALL_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_FLAMESTRIKE_RANK_1, SPELL_MAGE_FLAMESTRIKE_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARRIOR_THUNDER_CLAP_RANK_1, SPELL_WARRIOR_THUNDER_CLAP_RANK_9, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_ROGUE_KILLING_SPREE, SPELL_ROGUE_KILLING_SPREE, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARLOCK_HAUNT_RANK_1, SPELL_WARLOCK_HAUNT_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_DRUID_REJUVENATION_RANK_1, SPELL_DRUID_REJUVENATION_RANK_5, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_DRUID_REGROWTH_RANK_1, SPELL_DRUID_REGROWTH_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 }
@@ -216,6 +217,7 @@ void ClearSpellMasteryRuntimeStateForPlayer(uint32 guid)
     ClearSpellMasteryDruidRuntimeStateForPlayer(guid);
     ClearSpellMasteryWarriorRuntimeStateForPlayer(guid);
     ClearSpellMasteryWarlockRuntimeStateForPlayer(guid);
+    ClearSpellMasteryRogueRuntimeStateForPlayer(guid);
 }
 
 bool ShouldAwardSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint32 cooldownMs)
@@ -413,4 +415,5 @@ void AddSC_spell_mastery_fireball()
     AddSC_spell_mastery_druid();
     AddSC_spell_mastery_warrior();
     AddSC_spell_mastery_warlock();
+    AddSC_spell_mastery_rogue();
 }

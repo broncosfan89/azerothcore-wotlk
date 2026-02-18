@@ -33,7 +33,7 @@ namespace
 {
 struct ThunderClapMasteryEffects
 {
-    float IronDamageBonusPct = 0.0f;
+    float DamageBonusPct = 0.0f;
     float BronzeRadiusMultiplier = 1.0f;
     int32 BronzeCooldownReductionMs = 0;
     uint8 SilverRendTargets = 0;
@@ -63,8 +63,12 @@ ThunderClapMasteryEffects BuildThunderClapMasteryEffects(SpellMastery::SpellMast
     uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
 
-    // Iron: increase Thunder Clap damage.
-    effects.IronDamageBonusPct = float(ironLevel) * 12.0f;
+    // Global output ramp: every tier level contributes % damage all the way through Diamond.
+    effects.DamageBonusPct += float(ironLevel) * 20.0f;
+    effects.DamageBonusPct += float(bronzeLevel) * 20.0f;
+    effects.DamageBonusPct += float(silverLevel) * 20.0f;
+    effects.DamageBonusPct += float(goldLevel) * 25.0f;
+    effects.DamageBonusPct += float(diamondLevel) * 30.0f;
 
     // Bronze: every other level grants radius and cooldown gains.
     uint8 bronzeStepLevel = bronzeLevel / 2;
@@ -169,9 +173,9 @@ class spell_war_thunder_clap_mastery : public SpellScript
         if (hitDamage <= 0)
             return;
 
-        if (_effects.IronDamageBonusPct > 0.0f)
+        if (_effects.DamageBonusPct > 0.0f)
         {
-            int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.IronDamageBonusPct / 100.0f))));
+            int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.DamageBonusPct / 100.0f))));
             hitDamage = std::max(hitDamage, scaledDamage);
         }
 

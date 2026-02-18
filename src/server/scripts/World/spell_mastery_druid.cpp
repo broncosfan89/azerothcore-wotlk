@@ -130,7 +130,12 @@ RejuvenationMasteryEffects BuildRejuvenationMasteryEffects(SpellMastery::SpellMa
     uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
 
-    effects.IronHealBonusPct = float(ironLevel) * 10.0f;
+    // Global output ramp: every tier level contributes % healing all the way through Diamond.
+    effects.IronHealBonusPct += float(ironLevel) * 20.0f;
+    effects.IronHealBonusPct += float(bronzeLevel) * 20.0f;
+    effects.IronHealBonusPct += float(silverLevel) * 20.0f;
+    effects.IronHealBonusPct += float(goldLevel) * 25.0f;
+    effects.IronHealBonusPct += float(diamondLevel) * 30.0f;
 
     if (bronzeLevel > 0)
     {
@@ -166,8 +171,15 @@ RegrowthMasteryEffects BuildRegrowthMasteryEffects(SpellMastery::SpellMasteryPro
     uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
 
-    effects.IronDirectHealBonusPct = float(ironLevel) * 5.0f;
-    effects.IronHotHealBonusPct = float(ironLevel) * 5.0f;
+    // Global output ramp: every tier level contributes % healing all the way through Diamond.
+    float const totalHealBonusPct =
+        (float(ironLevel) * 20.0f) +
+        (float(bronzeLevel) * 20.0f) +
+        (float(silverLevel) * 20.0f) +
+        (float(goldLevel) * 25.0f) +
+        (float(diamondLevel) * 30.0f);
+    effects.IronDirectHealBonusPct = totalHealBonusPct;
+    effects.IronHotHealBonusPct = totalHealBonusPct;
 
     if (bronzeLevel > 0)
     {
