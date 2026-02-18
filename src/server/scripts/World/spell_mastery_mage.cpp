@@ -121,8 +121,8 @@ int32 constexpr FLAMESTRIKE_GOLD_BURN_DURATION_CAP_MS = 14000;
 uint32 constexpr FLAMESTRIKE_BURN_STATE_TTL_MS = 15000;
 uint32 constexpr FLAMESTRIKE_XP_GUARD_MS = 800;
 uint32 constexpr IGNITE_CARRY_TTL_MS = 750;
+int32 constexpr IGNITE_FAST_TICK_INTERVAL_MS = 500;
 uint32 constexpr SPELL_MAGE_IGNITE_TALENT_RANK_1 = 11119;
-uint32 constexpr SPELL_MAGE_PYROBLAST_RANK_1 = 11366;
 int32 constexpr PYROBLAST_IGNITE_BASE_DURATION_MS = 6000;
 int32 constexpr PYROBLAST_IGNITE_DURATION_EXTEND_MS = 1000;
 int32 constexpr PYROBLAST_IGNITE_DURATION_CAP_MS = 20000;
@@ -210,6 +210,41 @@ FireballMasteryEffects BuildFireballMasteryEffects(SpellMastery::SpellMasteryPro
     effects.DamageBonusPct += float(silverLevel) * 20.0f;
     effects.DamageBonusPct += float(goldLevel) * 25.0f;
     effects.DamageBonusPct += float(diamondLevel) * 30.0f;
+
+    if (bronzeLevel > 0)
+    {
+        effects.BonusCritChancePct = 5.0f + (float(bronzeLevel - 1) * 2.0f);
+    }
+
+    if (silverLevel > 0)
+    {
+        effects.SplashDamagePct = 35.0f + (float(silverLevel - 1) * (45.0f / 9.0f));
+    }
+
+    if (goldLevel > 0)
+        effects.GoldBurnPct = 20.0f + (float(goldLevel - 1) * (30.0f / 9.0f));
+
+    if (diamondLevel > 0)
+    {
+        effects.HasDiamondCastTime = true;
+        effects.DiamondCastTimeMultiplier = 0.05f - (float(diamondLevel - 1) * (0.04f / 9.0f));
+    }
+
+    return effects;
+}
+
+FireballMasteryEffects BuildPyroblastMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    FireballMasteryEffects effects;
+
+    uint8 ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
+    effects.DamageBonusPct = float(totalMasteryLevels) * 2.0f;
 
     if (bronzeLevel > 0)
     {
@@ -578,11 +613,27 @@ class spell_mage_pyroblast_ignite_pool : public SpellScript
             return false;
 
         _playerCaster = GetCaster()->ToPlayer();
-        uint32 firstRank = sSpellMgr->GetFirstSpellInChain(GetSpellInfo()->Id);
-        if (!firstRank)
-            firstRank = GetSpellInfo()->Id;
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_MAGE_PYROBLAST_RANK_1)
+            return false;
 
-        return firstRank == SPELL_MAGE_PYROBLAST_RANK_1;
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildPyroblastMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+        return true;
+    }
+
+    void HandleBeforeHit(SpellMissInfo /*missInfo*/)
+    {
+        if (_effects.BonusCritChancePct <= 0.0f)
+            return;
+
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        if (roll_chance_f(_effects.BonusCritChancePct))
+            GetSpell()->SetSpellValue(SPELLVALUE_FORCED_CRIT_RESULT, 1);
     }
 
     void HandleDirectDamage(SpellEffIndex /*effIndex*/)
@@ -591,7 +642,18 @@ class spell_mage_pyroblast_ignite_pool : public SpellScript
         if (!target || !_playerCaster->IsValidAttackTarget(target))
             return;
 
-        _finalHitDamage = GetHitDamage();
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        if (_effects.DamageBonusPct > 0.0f)
+        {
+            int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.DamageBonusPct / 100.0f))));
+            hitDamage = std::max(hitDamage, scaledDamage);
+        }
+
+        SetHitDamage(hitDamage);
+        _finalHitDamage = hitDamage;
     }
 
     void HandleAfterHit()
@@ -604,6 +666,65 @@ class spell_mage_pyroblast_ignite_pool : public SpellScript
         if (hitDamage <= 0)
             return;
 
+        if (!_isTriggeredCast)
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+
+        TryApplySilverSplashDamage(target, hitDamage);
+        TryApplyGoldStackingBurn(target, hitDamage);
+        TryApplyIgniteTalentBurn(target, hitDamage);
+    }
+
+    void TryApplySilverSplashDamage(Unit* primaryTarget, int32 hitDamage)
+    {
+        if (_effects.SplashDamagePct <= 0.0f || !primaryTarget || hitDamage <= 0)
+            return;
+
+        int32 const splashDamage = int32(std::lround((float(hitDamage) * _effects.SplashDamagePct) / 100.0f));
+        if (splashDamage <= 0)
+            return;
+
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(primaryTarget, _playerCaster, FIREBALL_SPLASH_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(primaryTarget, nearbyUnits, check);
+        Cell::VisitObjects(primaryTarget, searcher, FIREBALL_SPLASH_RADIUS);
+
+        for (Unit* nearbyTarget : nearbyUnits)
+        {
+            if (!nearbyTarget || !_playerCaster->IsValidAttackTarget(nearbyTarget))
+                continue;
+
+            SpellNonMeleeDamage splashInfo(_playerCaster, nearbyTarget, GetSpellInfo(), GetSpellInfo()->SchoolMask);
+            splashInfo.damage = splashDamage;
+            _playerCaster->SendSpellNonMeleeDamageLog(&splashInfo);
+            _playerCaster->DealSpellDamage(&splashInfo, false);
+        }
+    }
+
+    void TryApplyGoldStackingBurn(Unit* target, int32 hitDamage)
+    {
+        if (_effects.GoldBurnPct <= 0.0f || !target || hitDamage <= 0)
+            return;
+
+        SpellInfo const* igniteInfo = sSpellMgr->GetSpellInfo(SpellMastery::SPELL_MAGE_IGNITE);
+        if (!igniteInfo || !igniteInfo->GetMaxTicks())
+            return;
+
+        int32 const burnTotal = int32(std::lround((float(hitDamage) * _effects.GoldBurnPct) / 100.0f));
+        int32 const burnPerTick = std::max<int32>(1, burnTotal / int32(igniteInfo->GetMaxTicks()));
+        ApplyStackingIgniteDot(
+            _playerCaster,
+            target,
+            burnPerTick,
+            FIREBALL_GOLD_BURN_BASE_DURATION_MS,
+            FIREBALL_GOLD_BURN_DURATION_EXTEND_MS,
+            FIREBALL_GOLD_BURN_DURATION_CAP_MS,
+            "PyroGoldBurn",
+            hitDamage,
+            _effects.GoldBurnPct);
+    }
+
+    void TryApplyIgniteTalentBurn(Unit* target, int32 hitDamage)
+    {
         AuraEffect const* igniteTalent = _playerCaster->GetAuraEffectOfRankedSpell(SPELL_MAGE_IGNITE_TALENT_RANK_1, EFFECT_0);
         if (!igniteTalent)
             return;
@@ -630,12 +751,17 @@ class spell_mage_pyroblast_ignite_pool : public SpellScript
 
     void Register() override
     {
+        BeforeHit += BeforeSpellHitFn(spell_mage_pyroblast_ignite_pool::HandleBeforeHit);
         OnEffectHitTarget += SpellEffectFn(spell_mage_pyroblast_ignite_pool::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
         AfterHit += SpellHitFn(spell_mage_pyroblast_ignite_pool::HandleAfterHit);
     }
 
 private:
     Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    FireballMasteryEffects _effects;
+    bool _isTriggeredCast = false;
     int32 _finalHitDamage = 0;
 };
 
@@ -664,7 +790,10 @@ class spell_mage_ignite_mastery_pool : public AuraScript
         if (Aura* igniteAura = GetAura())
         {
             if (AuraEffect* igniteEffect = igniteAura->GetEffect(EFFECT_0))
+            {
                 igniteEffect->SetAmount(std::max<int32>(igniteEffect->GetAmount(), itr->second.TickAmount));
+                igniteEffect->SetPeriodicTimer(IGNITE_FAST_TICK_INTERVAL_MS);
+            }
 
             int32 const mergedMaxDuration = std::max<int32>(igniteAura->GetMaxDuration(), itr->second.MaxDurationMs);
             int32 const mergedDuration = std::max<int32>(igniteAura->GetDuration(), std::min<int32>(itr->second.DurationMs, mergedMaxDuration));
@@ -696,10 +825,21 @@ class spell_mage_ignite_mastery_pool : public AuraScript
         IgniteCarryStates[{ uint32(caster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) }] = state;
     }
 
+    void HandlePeriodicUpdate(AuraEffect* aurEff)
+    {
+        if (!aurEff)
+            return;
+
+        // Keep Ignite ticking quickly even while frequent reapplications are happening.
+        if (aurEff->GetPeriodicTimer() > IGNITE_FAST_TICK_INTERVAL_MS)
+            aurEff->SetPeriodicTimer(IGNITE_FAST_TICK_INTERVAL_MS);
+    }
+
     void Register() override
     {
         OnEffectApply += AuraEffectApplyFn(spell_mage_ignite_mastery_pool::HandleEffectApply, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
         OnEffectRemove += AuraEffectRemoveFn(spell_mage_ignite_mastery_pool::HandleEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_mage_ignite_mastery_pool::HandlePeriodicUpdate, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
     }
 };
 
@@ -725,6 +865,22 @@ public:
         if (config->BaseSpellId == SpellMastery::SPELL_MAGE_FIREBALL_RANK_1)
         {
             FireballMasteryEffects const effects = BuildFireballMasteryEffects(progress, *config);
+            if (!effects.HasDiamondCastTime)
+                return;
+
+            int32 const currentCastTime = spell->GetCastTime();
+            if (currentCastTime <= 0)
+                return;
+
+            int32 const reducedCastTime = std::max<int32>(1, int32(float(currentCastTime) * effects.DiamondCastTimeMultiplier));
+            if (reducedCastTime < currentCastTime)
+                spell->SetSpellMasteryCastTime(reducedCastTime);
+            return;
+        }
+
+        if (config->BaseSpellId == SpellMastery::SPELL_MAGE_PYROBLAST_RANK_1)
+        {
+            FireballMasteryEffects const effects = BuildPyroblastMasteryEffects(progress, *config);
             if (!effects.HasDiamondCastTime)
                 return;
 
