@@ -34,10 +34,12 @@
 
 namespace SpellMastery
 {
-std::array<ManagedSpellConfig, 4> const ManagedSpellConfigs =
+std::array<ManagedSpellConfig, 6> const ManagedSpellConfigs =
 { {
     { SPELL_MAGE_FIREBALL_RANK_1, SPELL_MAGE_FIREBALL_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_FLAMESTRIKE_RANK_1, SPELL_MAGE_FLAMESTRIKE_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_WARRIOR_THUNDER_CLAP_RANK_1, SPELL_WARRIOR_THUNDER_CLAP_RANK_9, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_WARLOCK_HAUNT_RANK_1, SPELL_WARLOCK_HAUNT_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_DRUID_REJUVENATION_RANK_1, SPELL_DRUID_REJUVENATION_RANK_5, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_DRUID_REGROWTH_RANK_1, SPELL_DRUID_REGROWTH_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 }
 } };
@@ -212,6 +214,8 @@ void ClearSpellMasteryRuntimeStateForPlayer(uint32 guid)
 
     ClearSpellMasteryMageRuntimeStateForPlayer(guid);
     ClearSpellMasteryDruidRuntimeStateForPlayer(guid);
+    ClearSpellMasteryWarriorRuntimeStateForPlayer(guid);
+    ClearSpellMasteryWarlockRuntimeStateForPlayer(guid);
 }
 
 bool ShouldAwardSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint32 cooldownMs)
@@ -349,14 +353,10 @@ public:
 
         SpellMastery::EnforceAllManagedSpellBaseRanks(player);
 
-        for (uint32 baseSpellId : { SpellMastery::SPELL_MAGE_FIREBALL_RANK_1, SpellMastery::SPELL_MAGE_FLAMESTRIKE_RANK_1, SpellMastery::SPELL_DRUID_REJUVENATION_RANK_1, SpellMastery::SPELL_DRUID_REGROWTH_RANK_1 })
+        for (SpellMastery::ManagedSpellConfig const& config : SpellMastery::ManagedSpellConfigs)
         {
-            SpellMastery::ManagedSpellConfig const* config = SpellMastery::GetManagedSpellConfigByBaseSpell(baseSpellId);
-            if (!config)
-                continue;
-
-            SpellMastery::SpellMasteryProgress const& progress = SpellMastery::GetOrLoadSpellMasteryProgress(player, *config);
-            SpellMastery::SendMasteryAddonMessageForProgress(player, *config, progress);
+            SpellMastery::SpellMasteryProgress const& progress = SpellMastery::GetOrLoadSpellMasteryProgress(player, config);
+            SpellMastery::SendMasteryAddonMessageForProgress(player, config, progress);
         }
     }
 
@@ -373,6 +373,9 @@ public:
         SpellMastery::ManagedSpellConfig const* config = nullptr;
         if (!player || !SpellMastery::IsManagedRankSpell(spellID, &config) || spellID == config->AllowedSpellId)
             return;
+
+        if (!player->HasSpell(config->AllowedSpellId))
+            player->learnSpell(config->AllowedSpellId);
 
         player->removeSpell(spellID, SPEC_MASK_ALL, false);
         if (player->GetSession())
@@ -401,4 +404,6 @@ void AddSC_spell_mastery_fireball()
     new spell_mastery_player_script();
     AddSC_spell_mastery_mage();
     AddSC_spell_mastery_druid();
+    AddSC_spell_mastery_warrior();
+    AddSC_spell_mastery_warlock();
 }

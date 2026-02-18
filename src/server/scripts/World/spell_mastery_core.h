@@ -31,6 +31,12 @@ enum SpellMasteryConstants : uint32
     SPELL_MAGE_FIREBALL_RANK_3 = 145,
     SPELL_MAGE_FLAMESTRIKE_RANK_1 = 2120,
     SPELL_MAGE_FLAMESTRIKE_RANK_3 = 8422,
+    SPELL_WARRIOR_THUNDER_CLAP_RANK_1 = 6343,
+    SPELL_WARRIOR_THUNDER_CLAP_RANK_9 = 47502,
+    SPELL_WARRIOR_REND_RANK_1 = 772,
+    SPELL_WARLOCK_HAUNT_RANK_1 = 48181,
+    SPELL_WARLOCK_HAUNT_RANK_3 = 59163,
+    SPELL_WARLOCK_HAUNT_HEAL = 48210,
     SPELL_DRUID_REJUVENATION_RANK_1 = 774,
     SPELL_DRUID_REJUVENATION_RANK_3 = 1430,
     SPELL_DRUID_REJUVENATION_RANK_5 = 2091,
@@ -111,7 +117,11 @@ void AddSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint64 
 
 void ClearSpellMasteryMageRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryDruidRuntimeStateForPlayer(uint32 guid);
+void ClearSpellMasteryWarriorRuntimeStateForPlayer(uint32 guid);
+void ClearSpellMasteryWarlockRuntimeStateForPlayer(uint32 guid);
 void AddSC_spell_mastery_mage();
 void AddSC_spell_mastery_druid();
+void AddSC_spell_mastery_warrior();
+void AddSC_spell_mastery_warlock();
 
 #endif
