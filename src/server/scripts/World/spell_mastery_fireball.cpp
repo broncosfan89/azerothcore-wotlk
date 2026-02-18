@@ -281,6 +281,13 @@ void EnforceManagedSpellBaseRankOnly(Player* player, ManagedSpellConfig const& c
         }
     }
 
+    if (!hasAnyRankInChain && config.BaseSpellId == SPELL_WARRIOR_THUNDER_CLAP_RANK_1 && player->getClass() == CLASS_WARRIOR)
+    {
+        SpellInfo const* baseInfo = sSpellMgr->GetSpellInfo(config.BaseSpellId);
+        if (!baseInfo || player->GetLevel() >= baseInfo->SpellLevel)
+            hasAnyRankInChain = true;
+    }
+
     if (hasAnyRankInChain && !player->HasSpell(config.AllowedSpellId))
     {
         // Upgrade managed spells to the configured baseline rank before pruning other chain ranks.

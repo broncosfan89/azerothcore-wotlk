@@ -84,6 +84,33 @@ struct FlamestrikeBurnState
     uint32 ExpiresAtMs = 0;
 };
 
+struct IgniteCarryKey
+{
+    uint32 CasterGuid;
+    uint32 TargetGuid;
+
+    bool operator==(IgniteCarryKey const& other) const
+    {
+        return CasterGuid == other.CasterGuid && TargetGuid == other.TargetGuid;
+    }
+};
+
+struct IgniteCarryKeyHash
+{
+    std::size_t operator()(IgniteCarryKey const& key) const
+    {
+        return (std::size_t(key.CasterGuid) << 32) ^ key.TargetGuid;
+    }
+};
+
+struct IgniteCarryState
+{
+    int32 TickAmount = 0;
+    int32 DurationMs = 0;
+    int32 MaxDurationMs = 0;
+    uint32 ExpiresAtMs = 0;
+};
+
 float constexpr FIREBALL_SPLASH_RADIUS = 8.0f;
 int32 constexpr FIREBALL_GOLD_BURN_BASE_DURATION_MS = 6000;
 int32 constexpr FIREBALL_GOLD_BURN_DURATION_EXTEND_MS = 2000;
@@ -93,8 +120,79 @@ int32 constexpr FLAMESTRIKE_GOLD_BURN_DURATION_EXTEND_MS = 1000;
 int32 constexpr FLAMESTRIKE_GOLD_BURN_DURATION_CAP_MS = 14000;
 uint32 constexpr FLAMESTRIKE_BURN_STATE_TTL_MS = 15000;
 uint32 constexpr FLAMESTRIKE_XP_GUARD_MS = 800;
+uint32 constexpr IGNITE_CARRY_TTL_MS = 750;
+uint32 constexpr SPELL_MAGE_IGNITE_TALENT_RANK_1 = 11119;
+uint32 constexpr SPELL_MAGE_PYROBLAST_RANK_1 = 11366;
+int32 constexpr PYROBLAST_IGNITE_BASE_DURATION_MS = 6000;
+int32 constexpr PYROBLAST_IGNITE_DURATION_EXTEND_MS = 1000;
+int32 constexpr PYROBLAST_IGNITE_DURATION_CAP_MS = 20000;
 
 std::unordered_map<FlamestrikeBurnKey, FlamestrikeBurnState, FlamestrikeBurnKeyHash> FlamestrikeBurnStates;
+std::unordered_map<IgniteCarryKey, IgniteCarryState, IgniteCarryKeyHash> IgniteCarryStates;
+
+void ApplyStackingIgniteDot(Player* caster, Unit* target, int32 addPerTick, int32 baseDurationMs, int32 extendDurationMs, int32 capDurationMs,
+    char const* debugTag = nullptr, int32 sourceDamage = 0, float sourcePct = 0.0f)
+{
+    if (!caster || !target || addPerTick <= 0 || baseDurationMs <= 0 || capDurationMs <= 0)
+        return;
+
+    int32 previousTickAmount = 0;
+    AuraEffect* currentIgniteEffect = nullptr;
+    int32 priorMaxDuration = baseDurationMs;
+    int32 priorDuration = baseDurationMs;
+    if (Aura* igniteAura = target->GetAura(SpellMastery::SPELL_MAGE_IGNITE, caster->GetGUID()))
+    {
+        priorMaxDuration = std::max(igniteAura->GetMaxDuration(), baseDurationMs);
+        priorDuration = std::max(igniteAura->GetDuration(), baseDurationMs);
+        currentIgniteEffect = igniteAura->GetEffect(EFFECT_0);
+        if (currentIgniteEffect)
+            previousTickAmount = std::max<int32>(0, currentIgniteEffect->GetAmount());
+    }
+
+    int32 const stackedPerTick = std::max<int32>(1, previousTickAmount + addPerTick);
+
+    caster->CastCustomSpell(
+        SpellMastery::SPELL_MAGE_IGNITE,
+        SPELLVALUE_BASE_POINT0,
+        stackedPerTick,
+        target,
+        TriggerCastFlags(TRIGGERED_FULL_MASK & ~TRIGGERED_NO_PERIODIC_RESET),
+        nullptr,
+        currentIgniteEffect,
+        caster->GetGUID());
+
+    int32 appliedTickAmount = 0;
+    int32 appliedDuration = 0;
+    int32 appliedMaxDuration = 0;
+
+    if (Aura* refreshedIgniteAura = target->GetAura(SpellMastery::SPELL_MAGE_IGNITE, caster->GetGUID()))
+    {
+        int32 const nextMaxDuration = std::min(capDurationMs, priorMaxDuration + std::max<int32>(0, extendDurationMs));
+        int32 const nextDuration = std::min(nextMaxDuration, priorDuration + std::max<int32>(0, extendDurationMs));
+        refreshedIgniteAura->SetMaxDuration(nextMaxDuration);
+        refreshedIgniteAura->SetDuration(nextDuration);
+
+        appliedDuration = refreshedIgniteAura->GetDuration();
+        appliedMaxDuration = refreshedIgniteAura->GetMaxDuration();
+        if (AuraEffect* refreshedEffect = refreshedIgniteAura->GetEffect(EFFECT_0))
+            appliedTickAmount = refreshedEffect->GetAmount();
+    }
+
+    if (debugTag && caster->GetSession())
+    {
+        ChatHandler(caster->GetSession()).PSendSysMessage(
+            "[SM DBG] {} src={} pct={:.1f} prev={} add={} new={} applied={} dur={}/{}",
+            debugTag,
+            sourceDamage,
+            sourcePct,
+            previousTickAmount,
+            addPerTick,
+            stackedPerTick,
+            appliedTickAmount,
+            appliedDuration,
+            appliedMaxDuration);
+    }
+}
 
 FireballMasteryEffects BuildFireballMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -172,6 +270,14 @@ void ClearSpellMasteryMageRuntimeStateForPlayer(uint32 guid)
     {
         if (itr->first.CasterGuid == guid)
             itr = FlamestrikeBurnStates.erase(itr);
+        else
+            ++itr;
+    }
+
+    for (auto itr = IgniteCarryStates.begin(); itr != IgniteCarryStates.end();)
+    {
+        if (itr->first.CasterGuid == guid)
+            itr = IgniteCarryStates.erase(itr);
         else
             ++itr;
     }
@@ -291,67 +397,16 @@ class spell_mage_fireball_mastery : public SpellScript
 
         int32 const burnTotal = int32(std::lround((float(directDamage) * _effects.GoldBurnPct) / 100.0f));
         int32 const burnPerTick = std::max<int32>(1, burnTotal / int32(igniteInfo->GetMaxTicks()));
-
-        int32 previousTickAmount = 0;
-        int32 stackedPerTick = burnPerTick;
-        AuraEffect* currentIgniteEffect = nullptr;
-        int32 priorMaxDuration = FIREBALL_GOLD_BURN_BASE_DURATION_MS;
-        int32 priorDuration = FIREBALL_GOLD_BURN_BASE_DURATION_MS;
-        if (Aura* igniteAura = primaryTarget->GetAura(SpellMastery::SPELL_MAGE_IGNITE, _playerCaster->GetGUID()))
-        {
-            priorMaxDuration = std::max(igniteAura->GetMaxDuration(), FIREBALL_GOLD_BURN_BASE_DURATION_MS);
-            priorDuration = std::max(igniteAura->GetDuration(), FIREBALL_GOLD_BURN_BASE_DURATION_MS);
-            currentIgniteEffect = igniteAura->GetEffect(EFFECT_0);
-            if (currentIgniteEffect)
-                previousTickAmount = std::max<int32>(0, currentIgniteEffect->GetAmount());
-
-            stackedPerTick += previousTickAmount;
-        }
-
-        _playerCaster->CastCustomSpell(
-            SpellMastery::SPELL_MAGE_IGNITE,
-            SPELLVALUE_BASE_POINT0,
-            stackedPerTick,
+        ApplyStackingIgniteDot(
+            _playerCaster,
             primaryTarget,
-            TriggerCastFlags(TRIGGERED_FULL_MASK & ~TRIGGERED_NO_PERIODIC_RESET),
-            nullptr,
-            currentIgniteEffect,
-            _playerCaster->GetGUID());
-
-        int32 appliedTickAmount = 0;
-        int32 appliedDuration = 0;
-        int32 appliedMaxDuration = 0;
-
-        if (Aura* refreshedIgniteAura = primaryTarget->GetAura(SpellMastery::SPELL_MAGE_IGNITE, _playerCaster->GetGUID()))
-        {
-            int32 const nextMaxDuration = std::min(
-                FIREBALL_GOLD_BURN_DURATION_CAP_MS,
-                priorMaxDuration + FIREBALL_GOLD_BURN_DURATION_EXTEND_MS);
-            int32 const nextDuration = std::min(
-                nextMaxDuration,
-                priorDuration + FIREBALL_GOLD_BURN_DURATION_EXTEND_MS);
-            refreshedIgniteAura->SetMaxDuration(nextMaxDuration);
-            refreshedIgniteAura->SetDuration(nextDuration);
-
-            appliedDuration = refreshedIgniteAura->GetDuration();
-            appliedMaxDuration = refreshedIgniteAura->GetMaxDuration();
-            if (AuraEffect* refreshedEffect = refreshedIgniteAura->GetEffect(EFFECT_0))
-                appliedTickAmount = refreshedEffect->GetAmount();
-        }
-
-        if (_playerCaster->GetSession())
-        {
-            ChatHandler(_playerCaster->GetSession()).PSendSysMessage(
-                "[SM DBG] GoldBurn direct={} pct={:.1f} prev={} add={} new={} applied={} dur={}/{}",
-                directDamage,
-                _effects.GoldBurnPct,
-                previousTickAmount,
-                burnPerTick,
-                stackedPerTick,
-                appliedTickAmount,
-                appliedDuration,
-                appliedMaxDuration);
-        }
+            burnPerTick,
+            FIREBALL_GOLD_BURN_BASE_DURATION_MS,
+            FIREBALL_GOLD_BURN_DURATION_EXTEND_MS,
+            FIREBALL_GOLD_BURN_DURATION_CAP_MS,
+            "GoldBurn",
+            directDamage,
+            _effects.GoldBurnPct);
     }
 
     void Register() override
@@ -479,27 +534,13 @@ class spell_mage_flamestrike_mastery : public SpellScript
         int32 const perTick = std::max<int32>(1, burnTotal / int32(burnInfo->GetMaxTicks()));
         int32 const stackedPerTick = std::max<int32>(1, perTick * burnState.Stacks);
 
-        _playerCaster->CastCustomSpell(
-            SpellMastery::SPELL_MAGE_IGNITE,
-            SPELLVALUE_BASE_POINT0,
-            stackedPerTick,
+        ApplyStackingIgniteDot(
+            _playerCaster,
             target,
-            TriggerCastFlags(TRIGGERED_FULL_MASK & ~TRIGGERED_NO_PERIODIC_RESET),
-            nullptr,
-            nullptr,
-            _playerCaster->GetGUID());
-
-        if (Aura* burnAura = target->GetAura(SpellMastery::SPELL_MAGE_IGNITE, _playerCaster->GetGUID()))
-        {
-            int32 const nextMaxDuration = std::min(
-                FLAMESTRIKE_GOLD_BURN_DURATION_CAP_MS,
-                std::max(burnAura->GetMaxDuration(), FLAMESTRIKE_GOLD_BURN_BASE_DURATION_MS) + FLAMESTRIKE_GOLD_BURN_DURATION_EXTEND_MS);
-            int32 const nextDuration = std::min(
-                nextMaxDuration,
-                std::max(burnAura->GetDuration(), FLAMESTRIKE_GOLD_BURN_BASE_DURATION_MS) + FLAMESTRIKE_GOLD_BURN_DURATION_EXTEND_MS);
-            burnAura->SetMaxDuration(nextMaxDuration);
-            burnAura->SetDuration(nextDuration);
-        }
+            stackedPerTick,
+            FLAMESTRIKE_GOLD_BURN_BASE_DURATION_MS,
+            FLAMESTRIKE_GOLD_BURN_DURATION_EXTEND_MS,
+            FLAMESTRIKE_GOLD_BURN_DURATION_CAP_MS);
     }
 
     void Register() override
@@ -519,6 +560,141 @@ private:
     bool _xpAwarded = false;
     bool _isApplyingSilverExtra = false;
     int32 _finalHitDamage = 0;
+};
+
+class spell_mage_pyroblast_ignite_pool : public SpellScript
+{
+    PrepareSpellScript(spell_mage_pyroblast_ignite_pool);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        uint32 firstRank = sSpellMgr->GetFirstSpellInChain(GetSpellInfo()->Id);
+        if (!firstRank)
+            firstRank = GetSpellInfo()->Id;
+
+        return firstRank == SPELL_MAGE_PYROBLAST_RANK_1;
+    }
+
+    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        _finalHitDamage = GetHitDamage();
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 const hitDamage = std::max<int32>(GetHitDamage(), _finalHitDamage);
+        if (hitDamage <= 0)
+            return;
+
+        AuraEffect const* igniteTalent = _playerCaster->GetAuraEffectOfRankedSpell(SPELL_MAGE_IGNITE_TALENT_RANK_1, EFFECT_0);
+        if (!igniteTalent)
+            return;
+
+        SpellInfo const* igniteInfo = sSpellMgr->GetSpellInfo(SpellMastery::SPELL_MAGE_IGNITE);
+        if (!igniteInfo || !igniteInfo->GetMaxTicks())
+            return;
+
+        int32 const ignitePct = 8 * int32(igniteTalent->GetSpellInfo()->GetRank());
+        if (ignitePct <= 0)
+            return;
+
+        int32 const burnTotal = CalculatePct(hitDamage, ignitePct);
+        int32 const burnPerTick = std::max<int32>(1, burnTotal / int32(igniteInfo->GetMaxTicks()));
+
+        ApplyStackingIgniteDot(
+            _playerCaster,
+            target,
+            burnPerTick,
+            PYROBLAST_IGNITE_BASE_DURATION_MS,
+            PYROBLAST_IGNITE_DURATION_EXTEND_MS,
+            PYROBLAST_IGNITE_DURATION_CAP_MS);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_mage_pyroblast_ignite_pool::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_mage_pyroblast_ignite_pool::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    int32 _finalHitDamage = 0;
+};
+
+class spell_mage_ignite_mastery_pool : public AuraScript
+{
+    PrepareAuraScript(spell_mage_ignite_mastery_pool);
+
+    bool Load() override
+    {
+        return GetCaster() && GetCaster()->IsPlayer() && GetUnitOwner();
+    }
+
+    void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Unit* caster = GetCaster();
+        Unit* target = GetUnitOwner();
+        if (!caster || !target)
+            return;
+
+        uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+        IgniteCarryKey const key{ uint32(caster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) };
+        auto itr = IgniteCarryStates.find(key);
+        if (itr == IgniteCarryStates.end() || itr->second.ExpiresAtMs <= nowMs)
+            return;
+
+        if (Aura* igniteAura = GetAura())
+        {
+            if (AuraEffect* igniteEffect = igniteAura->GetEffect(EFFECT_0))
+                igniteEffect->SetAmount(std::max<int32>(igniteEffect->GetAmount(), itr->second.TickAmount));
+
+            int32 const mergedMaxDuration = std::max<int32>(igniteAura->GetMaxDuration(), itr->second.MaxDurationMs);
+            int32 const mergedDuration = std::max<int32>(igniteAura->GetDuration(), std::min<int32>(itr->second.DurationMs, mergedMaxDuration));
+            igniteAura->SetMaxDuration(mergedMaxDuration);
+            igniteAura->SetDuration(mergedDuration);
+        }
+
+        IgniteCarryStates.erase(itr);
+    }
+
+    void HandleEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
+    {
+        AuraApplication const* app = GetTargetApplication();
+        if (!app || app->GetRemoveMode() == AURA_REMOVE_BY_EXPIRE || app->GetRemoveMode() == AURA_REMOVE_BY_DEATH)
+            return;
+
+        Unit* caster = GetCaster();
+        Unit* target = GetUnitOwner();
+        Aura const* aura = GetAura();
+        if (!caster || !target || !aura)
+            return;
+
+        uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+        IgniteCarryState state;
+        state.TickAmount = std::max<int32>(0, aurEff->GetAmount());
+        state.DurationMs = std::max<int32>(0, aura->GetDuration());
+        state.MaxDurationMs = std::max<int32>(0, aura->GetMaxDuration());
+        state.ExpiresAtMs = nowMs + IGNITE_CARRY_TTL_MS;
+        IgniteCarryStates[{ uint32(caster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) }] = state;
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_mage_ignite_mastery_pool::HandleEffectApply, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+        OnEffectRemove += AuraEffectRemoveFn(spell_mage_ignite_mastery_pool::HandleEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+    }
 };
 
 class spell_mastery_prepare_mage_spell_script : public AllSpellScript
@@ -581,4 +757,6 @@ void AddSC_spell_mastery_mage()
     new spell_mastery_prepare_mage_spell_script();
     RegisterSpellScript(spell_mage_fireball_mastery);
     RegisterSpellScript(spell_mage_flamestrike_mastery);
+    RegisterSpellScript(spell_mage_pyroblast_ignite_pool);
+    RegisterSpellScript(spell_mage_ignite_mastery_pool);
 }
