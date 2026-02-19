@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <cmath>
 #include <list>
+#include <mutex>
 #include <unordered_map>
 
 namespace
@@ -167,6 +168,7 @@ int32 constexpr RIP_MIN_TICK_INTERVAL_MS = 800;
 std::unordered_map<RejuvenationStackKey, RejuvenationStackState, RejuvenationStackKeyHash> RejuvenationStackStates;
 std::unordered_map<RegrowthStackKey, RegrowthStackState, RegrowthStackKeyHash> RegrowthStackStates;
 std::unordered_map<RipSilverDamageTakenKey, RipSilverDamageTakenState, RipSilverDamageTakenKeyHash> RipSilverDamageTakenStates;
+std::mutex SpellMasteryDruidStateMutex;
 
 RejuvenationMasteryEffects BuildRejuvenationMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -318,6 +320,7 @@ float GetRipSilverDamageTakenPct(Player* caster, Unit* target)
         uint32(target->GetGUID().GetCounter())
     };
 
+    std::lock_guard<std::mutex> lock(SpellMasteryDruidStateMutex);
     auto itr = RipSilverDamageTakenStates.find(key);
     if (itr == RipSilverDamageTakenStates.end())
         return 0.0f;
@@ -335,6 +338,7 @@ float GetRipSilverDamageTakenPct(Player* caster, Unit* target)
 
 void ClearSpellMasteryDruidRuntimeStateForPlayer(uint32 guid)
 {
+    std::lock_guard<std::mutex> lock(SpellMasteryDruidStateMutex);
     for (auto itr = RejuvenationStackStates.begin(); itr != RejuvenationStackStates.end();)
     {
         if (itr->first.CasterGuid == guid || itr->first.TargetGuid == guid)
@@ -400,19 +404,22 @@ class spell_dru_rejuvenation_mastery : public SpellScript
         uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
 
         uint8 nextStacks = 1;
-        if (_effects.GoldMaxStacks > 1 && target->GetAura(_config->BaseSpellId, _playerCaster->GetGUID()))
         {
-            auto itr = RejuvenationStackStates.find({ casterGuid, targetGuid });
-            uint8 currentStacks = 1;
-            if (itr != RejuvenationStackStates.end() && itr->second.ExpiresAtMs > nowMs)
-                currentStacks = std::max<uint8>(1, itr->second.Stacks);
+            std::lock_guard<std::mutex> lock(SpellMasteryDruidStateMutex);
+            if (_effects.GoldMaxStacks > 1 && target->GetAura(_config->BaseSpellId, _playerCaster->GetGUID()))
+            {
+                auto itr = RejuvenationStackStates.find({ casterGuid, targetGuid });
+                uint8 currentStacks = 1;
+                if (itr != RejuvenationStackStates.end() && itr->second.ExpiresAtMs > nowMs)
+                    currentStacks = std::max<uint8>(1, itr->second.Stacks);
 
-            nextStacks = std::min<uint8>(_effects.GoldMaxStacks, uint8(currentStacks + 1));
+                nextStacks = std::min<uint8>(_effects.GoldMaxStacks, uint8(currentStacks + 1));
+            }
+
+            RejuvenationStackState& stackState = RejuvenationStackStates[{ casterGuid, targetGuid }];
+            stackState.Stacks = nextStacks;
+            stackState.ExpiresAtMs = nowMs + REJUVENATION_STACK_STATE_TTL_MS;
         }
-
-        RejuvenationStackState& stackState = RejuvenationStackStates[{ casterGuid, targetGuid }];
-        stackState.Stacks = nextStacks;
-        stackState.ExpiresAtMs = nowMs + REJUVENATION_STACK_STATE_TTL_MS;
     }
 
     void HandleOnHit()
@@ -504,6 +511,7 @@ class spell_dru_rejuvenation_mastery_aura : public AuraScript
                 uint32(target->GetGUID().GetCounter())
             };
 
+            std::lock_guard<std::mutex> lock(SpellMasteryDruidStateMutex);
             auto itr = RejuvenationStackStates.find(key);
             if (itr != RejuvenationStackStates.end() && itr->second.ExpiresAtMs > nowMs)
             {
@@ -573,16 +581,19 @@ class spell_dru_rejuvenation_mastery_aura : public AuraScript
         if (!target)
             return;
 
-        RejuvenationStackState& stackState = RejuvenationStackStates[
-            {
-                uint32(_playerCaster->GetGUID().GetCounter()),
-                uint32(target->GetGUID().GetCounter())
-            }];
+        {
+            std::lock_guard<std::mutex> lock(SpellMasteryDruidStateMutex);
+            RejuvenationStackState& stackState = RejuvenationStackStates[
+                {
+                    uint32(_playerCaster->GetGUID().GetCounter()),
+                    uint32(target->GetGUID().GetCounter())
+                }];
 
-        if (!stackState.Stacks)
-            stackState.Stacks = 1;
+            if (!stackState.Stacks)
+                stackState.Stacks = 1;
 
-        stackState.ExpiresAtMs = uint32(GameTime::GetGameTimeMS().count()) + REJUVENATION_STACK_STATE_TTL_MS;
+            stackState.ExpiresAtMs = uint32(GameTime::GetGameTimeMS().count()) + REJUVENATION_STACK_STATE_TTL_MS;
+        }
     }
 
     void Register() override
@@ -639,19 +650,22 @@ class spell_dru_regrowth_mastery : public SpellScript
         uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
 
         uint8 nextStacks = 1;
-        if (_effects.GoldMaxStacks > 1 && target->GetAura(_config->BaseSpellId, _playerCaster->GetGUID()))
         {
-            auto itr = RegrowthStackStates.find({ casterGuid, targetGuid });
-            uint8 currentStacks = 1;
-            if (itr != RegrowthStackStates.end() && itr->second.ExpiresAtMs > nowMs)
-                currentStacks = std::max<uint8>(1, itr->second.Stacks);
+            std::lock_guard<std::mutex> lock(SpellMasteryDruidStateMutex);
+            if (_effects.GoldMaxStacks > 1 && target->GetAura(_config->BaseSpellId, _playerCaster->GetGUID()))
+            {
+                auto itr = RegrowthStackStates.find({ casterGuid, targetGuid });
+                uint8 currentStacks = 1;
+                if (itr != RegrowthStackStates.end() && itr->second.ExpiresAtMs > nowMs)
+                    currentStacks = std::max<uint8>(1, itr->second.Stacks);
 
-            nextStacks = std::min<uint8>(_effects.GoldMaxStacks, uint8(currentStacks + 1));
+                nextStacks = std::min<uint8>(_effects.GoldMaxStacks, uint8(currentStacks + 1));
+            }
+
+            RegrowthStackState& stackState = RegrowthStackStates[{ casterGuid, targetGuid }];
+            stackState.Stacks = nextStacks;
+            stackState.ExpiresAtMs = nowMs + REGROWTH_STACK_STATE_TTL_MS;
         }
-
-        RegrowthStackState& stackState = RegrowthStackStates[{ casterGuid, targetGuid }];
-        stackState.Stacks = nextStacks;
-        stackState.ExpiresAtMs = nowMs + REGROWTH_STACK_STATE_TTL_MS;
     }
 
     void HandleDirectHeal(SpellEffIndex /*effIndex*/)
@@ -766,6 +780,7 @@ class spell_dru_regrowth_mastery_aura : public AuraScript
                 uint32(target->GetGUID().GetCounter())
             };
 
+            std::lock_guard<std::mutex> lock(SpellMasteryDruidStateMutex);
             auto itr = RegrowthStackStates.find(key);
             if (itr != RegrowthStackStates.end() && itr->second.ExpiresAtMs > nowMs)
             {
@@ -835,16 +850,19 @@ class spell_dru_regrowth_mastery_aura : public AuraScript
         if (!target)
             return;
 
-        RegrowthStackState& stackState = RegrowthStackStates[
-            {
-                uint32(_playerCaster->GetGUID().GetCounter()),
-                uint32(target->GetGUID().GetCounter())
-            }];
+        {
+            std::lock_guard<std::mutex> lock(SpellMasteryDruidStateMutex);
+            RegrowthStackState& stackState = RegrowthStackStates[
+                {
+                    uint32(_playerCaster->GetGUID().GetCounter()),
+                    uint32(target->GetGUID().GetCounter())
+                }];
 
-        if (!stackState.Stacks)
-            stackState.Stacks = 1;
+            if (!stackState.Stacks)
+                stackState.Stacks = 1;
 
-        stackState.ExpiresAtMs = uint32(GameTime::GetGameTimeMS().count()) + REGROWTH_STACK_STATE_TTL_MS;
+            stackState.ExpiresAtMs = uint32(GameTime::GetGameTimeMS().count()) + REGROWTH_STACK_STATE_TTL_MS;
+        }
     }
 
     void Register() override
@@ -1071,11 +1089,14 @@ class spell_dru_rip_mastery_aura : public AuraScript
 
         int32 const durationMs = GetAura() ? GetAura()->GetDuration() : 0;
         uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
-        RipSilverDamageTakenStates[{ uint32(_playerCaster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) }] =
         {
-            _effects.SilverDamageTakenPct,
-            nowMs + uint32(std::max<int32>(1000, durationMs))
-        };
+            std::lock_guard<std::mutex> lock(SpellMasteryDruidStateMutex);
+            RipSilverDamageTakenStates[{ uint32(_playerCaster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) }] =
+            {
+                _effects.SilverDamageTakenPct,
+                nowMs + uint32(std::max<int32>(1000, durationMs))
+            };
+        }
     }
 
     void HandleEffectRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
@@ -1087,7 +1108,10 @@ class spell_dru_rip_mastery_aura : public AuraScript
         if (!target)
             return;
 
-        RipSilverDamageTakenStates.erase({ uint32(_playerCaster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) });
+        {
+            std::lock_guard<std::mutex> lock(SpellMasteryDruidStateMutex);
+            RipSilverDamageTakenStates.erase({ uint32(_playerCaster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) });
+        }
     }
 
     void Register() override

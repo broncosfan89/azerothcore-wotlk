@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <mutex>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -58,6 +59,7 @@ char const SPELL_MASTERY_ADDON_PREFIX[] = "SMT";
 
 std::unordered_map<MasteryCacheKey, SpellMasteryProgress, MasteryCacheKeyHash> SpellMasteryCache;
 std::unordered_map<MasteryCacheKey, uint32, MasteryCacheKeyHash> SpellMasteryLastXpGrantMs;
+std::mutex SpellMasteryCacheMutex;
 
 uint32 constexpr EARLY_ACCESS_LEVEL_OFFSET = 4;
 float constexpr EARLY_ACCESS_MIN_SCALE = 0.05f;
@@ -219,21 +221,31 @@ MasteryCacheKey MakeMasteryCacheKey(Player* player, ManagedSpellConfig const& co
     };
 }
 
-SpellMasteryProgress& GetOrLoadSpellMasteryProgress(Player* player, ManagedSpellConfig const& config)
+SpellMasteryProgress GetOrLoadSpellMasteryProgress(Player* player, ManagedSpellConfig const& config)
 {
     MasteryCacheKey key = MakeMasteryCacheKey(player, config);
-
-    auto itr = SpellMasteryCache.find(key);
-    if (itr != SpellMasteryCache.end())
-        return itr->second;
+    {
+        std::lock_guard<std::mutex> lock(SpellMasteryCacheMutex);
+        auto itr = SpellMasteryCache.find(key);
+        if (itr != SpellMasteryCache.end())
+            return itr->second;
+    }
 
     SpellMasteryProgress const loaded = LoadSpellMasteryProgressFromDb(key.Guid, config);
-    auto [newItr, _] = SpellMasteryCache.emplace(key, loaded);
-    return newItr->second;
+    {
+        std::lock_guard<std::mutex> lock(SpellMasteryCacheMutex);
+        auto [itr, inserted] = SpellMasteryCache.emplace(key, loaded);
+        if (!inserted)
+            return itr->second;
+    }
+
+    return loaded;
 }
 
 void ClearSpellMasteryCacheForPlayer(uint32 guid)
 {
+    std::lock_guard<std::mutex> lock(SpellMasteryCacheMutex);
+
     for (auto itr = SpellMasteryCache.begin(); itr != SpellMasteryCache.end();)
     {
         if (itr->first.Guid == guid)
@@ -247,12 +259,15 @@ void ClearSpellMasteryRuntimeStateForPlayer(uint32 guid)
 {
     ClearSpellMasteryCacheForPlayer(guid);
 
-    for (auto itr = SpellMasteryLastXpGrantMs.begin(); itr != SpellMasteryLastXpGrantMs.end();)
     {
-        if (itr->first.Guid == guid)
-            itr = SpellMasteryLastXpGrantMs.erase(itr);
-        else
-            ++itr;
+        std::lock_guard<std::mutex> lock(SpellMasteryCacheMutex);
+        for (auto itr = SpellMasteryLastXpGrantMs.begin(); itr != SpellMasteryLastXpGrantMs.end();)
+        {
+            if (itr->first.Guid == guid)
+                itr = SpellMasteryLastXpGrantMs.erase(itr);
+            else
+                ++itr;
+        }
     }
 
     ClearSpellMasteryMageRuntimeStateForPlayer(guid);
@@ -272,6 +287,7 @@ bool ShouldAwardSpellMasteryXp(Player* player, ManagedSpellConfig const& config,
 
     MasteryCacheKey key = MakeMasteryCacheKey(player, config);
     uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    std::lock_guard<std::mutex> lock(SpellMasteryCacheMutex);
 
     auto itr = SpellMasteryLastXpGrantMs.find(key);
     if (itr != SpellMasteryLastXpGrantMs.end() && nowMs >= itr->second && (nowMs - itr->second) < cooldownMs)
@@ -414,7 +430,7 @@ void AddSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint64 
     if (!xpGain)
         return;
 
-    SpellMasteryProgress& progress = GetOrLoadSpellMasteryProgress(player, config);
+    SpellMasteryProgress progress = GetOrLoadSpellMasteryProgress(player, config);
     progress.Xp += xpGain;
 
     bool leveled = false;
@@ -436,6 +452,11 @@ void AddSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint64 
         }
         else
             break;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(SpellMasteryCacheMutex);
+        SpellMasteryCache[MakeMasteryCacheKey(player, config)] = progress;
     }
 
     SaveSpellMasteryProgressToDb(uint32(player->GetGUID().GetCounter()), config, progress);

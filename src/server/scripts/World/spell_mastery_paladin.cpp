@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 #include <unordered_map>
 
 namespace
@@ -61,6 +62,7 @@ uint32 constexpr CONSECRATION_GOLD_STATE_TTL_MS = 2000;
 std::unordered_map<uint32, ConsecrationSilverState> ConsecrationSilverStates;
 // Tracks temporary paladin self-buff stacks while Consecration is actively hitting enemies.
 std::unordered_map<uint32, ConsecrationGoldState> ConsecrationGoldStates;
+std::mutex SpellMasteryPaladinStateMutex;
 
 ConsecrationMasteryEffects BuildConsecrationMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -147,6 +149,7 @@ void ApplyOrRefreshSilverState(Unit* target, float reductionPct)
         return;
 
     uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    std::lock_guard<std::mutex> lock(SpellMasteryPaladinStateMutex);
     ConsecrationSilverState& state = ConsecrationSilverStates[uint32(target->GetGUID().GetCounter())];
     state.DamageReductionPct = std::max(state.DamageReductionPct, reductionPct);
     state.ExpiresAtMs = nowMs + CONSECRATION_SILVER_STATE_TTL_MS;
@@ -158,6 +161,7 @@ float GetSilverReductionPct(Unit* unitCaster)
         return 0.0f;
 
     uint32 const casterGuid = uint32(unitCaster->GetGUID().GetCounter());
+    std::lock_guard<std::mutex> lock(SpellMasteryPaladinStateMutex);
     auto itr = ConsecrationSilverStates.find(casterGuid);
     if (itr == ConsecrationSilverStates.end())
         return 0.0f;
@@ -178,6 +182,7 @@ void ApplyOrRefreshGoldState(Player* paladin, uint8 maxStacks, float bonusPctPer
         return;
 
     uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    std::lock_guard<std::mutex> lock(SpellMasteryPaladinStateMutex);
     ConsecrationGoldState& state = ConsecrationGoldStates[uint32(paladin->GetGUID().GetCounter())];
     if (state.ExpiresAtMs <= nowMs)
         state.Stacks = 0;
@@ -193,6 +198,7 @@ float GetGoldDamageBonusPct(Player* paladin)
         return 0.0f;
 
     uint32 const paladinGuid = uint32(paladin->GetGUID().GetCounter());
+    std::lock_guard<std::mutex> lock(SpellMasteryPaladinStateMutex);
     auto itr = ConsecrationGoldStates.find(paladinGuid);
     if (itr == ConsecrationGoldStates.end())
         return 0.0f;
@@ -210,6 +216,7 @@ float GetGoldDamageBonusPct(Player* paladin)
 
 void ClearSpellMasteryPaladinRuntimeStateForPlayer(uint32 guid)
 {
+    std::lock_guard<std::mutex> lock(SpellMasteryPaladinStateMutex);
     ConsecrationGoldStates.erase(guid);
     ConsecrationSilverStates.erase(guid);
 }

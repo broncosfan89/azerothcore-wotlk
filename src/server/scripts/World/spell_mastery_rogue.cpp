@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 #include <unordered_map>
 
 namespace
@@ -46,6 +47,7 @@ uint32 constexpr KILLING_SPREE_BASE_COOLDOWN_MS = 90000;
 uint32 constexpr KILLING_SPREE_SILVER_COOLDOWN_MS = 45000;
 
 std::unordered_map<uint32, uint8> KillingSpreePendingDiamondExtra;
+std::mutex KillingSpreePendingDiamondExtraMutex;
 
 KillingSpreeMasteryEffects BuildKillingSpreeMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -82,6 +84,7 @@ KillingSpreeMasteryEffects BuildKillingSpreeMasteryEffects(SpellMastery::SpellMa
 
 void ClearSpellMasteryRogueRuntimeStateForPlayer(uint32 guid)
 {
+    std::lock_guard<std::mutex> lock(KillingSpreePendingDiamondExtraMutex);
     KillingSpreePendingDiamondExtra.erase(guid);
 }
 
@@ -159,12 +162,15 @@ class spell_rog_killing_spree_weapon_mastery : public SpellScript
         _effects = BuildKillingSpreeMasteryEffects(progress, *_config);
         _casterGuidLow = uint32(_playerCaster->GetGUID().GetCounter());
 
-        auto itr = KillingSpreePendingDiamondExtra.find(_casterGuidLow);
-        if (itr != KillingSpreePendingDiamondExtra.end() && itr->second > 0)
         {
-            _isDiamondExtraCast = true;
-            if (--itr->second == 0)
-                KillingSpreePendingDiamondExtra.erase(itr);
+            std::lock_guard<std::mutex> lock(KillingSpreePendingDiamondExtraMutex);
+            auto itr = KillingSpreePendingDiamondExtra.find(_casterGuidLow);
+            if (itr != KillingSpreePendingDiamondExtra.end() && itr->second > 0)
+            {
+                _isDiamondExtraCast = true;
+                if (--itr->second == 0)
+                    KillingSpreePendingDiamondExtra.erase(itr);
+            }
         }
 
         return true;
@@ -224,7 +230,10 @@ class spell_rog_killing_spree_weapon_mastery : public SpellScript
         if (!roll_chance_f(_effects.DiamondExtraStrikeChancePct))
             return;
 
-        ++KillingSpreePendingDiamondExtra[_casterGuidLow];
+        {
+            std::lock_guard<std::mutex> lock(KillingSpreePendingDiamondExtraMutex);
+            ++KillingSpreePendingDiamondExtra[_casterGuidLow];
+        }
         _playerCaster->CastSpell(target, SpellMastery::SPELL_ROGUE_KILLING_SPREE_WEAPON_DMG, TRIGGERED_FULL_MASK);
     }
 

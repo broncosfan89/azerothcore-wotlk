@@ -121,7 +121,7 @@ SpellMasteryProgress SanitizeMasteryProgress(SpellMasteryProgress progress, Mana
 SpellMasteryProgress LoadSpellMasteryProgressFromDb(uint32 guid, ManagedSpellConfig const& config);
 void SaveSpellMasteryProgressToDb(uint32 guid, ManagedSpellConfig const& config, SpellMasteryProgress const& progress);
 MasteryCacheKey MakeMasteryCacheKey(Player* player, ManagedSpellConfig const& config);
-SpellMasteryProgress& GetOrLoadSpellMasteryProgress(Player* player, ManagedSpellConfig const& config);
+SpellMasteryProgress GetOrLoadSpellMasteryProgress(Player* player, ManagedSpellConfig const& config);
 void ClearSpellMasteryCacheForPlayer(uint32 guid);
 void ClearSpellMasteryRuntimeStateForPlayer(uint32 guid);
 bool ShouldAwardSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint32 cooldownMs);

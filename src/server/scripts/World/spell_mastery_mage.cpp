@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <cmath>
 #include <list>
+#include <mutex>
 #include <unordered_map>
 
 namespace
@@ -129,6 +130,7 @@ int32 constexpr PYROBLAST_IGNITE_DURATION_CAP_MS = 20000;
 
 std::unordered_map<FlamestrikeBurnKey, FlamestrikeBurnState, FlamestrikeBurnKeyHash> FlamestrikeBurnStates;
 std::unordered_map<IgniteCarryKey, IgniteCarryState, IgniteCarryKeyHash> IgniteCarryStates;
+std::mutex SpellMasteryMageStateMutex;
 
 void ApplyStackingIgniteDot(Player* caster, Unit* target, int32 addPerTick, int32 baseDurationMs, int32 extendDurationMs, int32 capDurationMs,
     char const* debugTag = nullptr, int32 sourceDamage = 0, float sourcePct = 0.0f)
@@ -309,6 +311,8 @@ FlamestrikeMasteryEffects BuildFlamestrikeMasteryEffects(SpellMastery::SpellMast
 
 void ClearSpellMasteryMageRuntimeStateForPlayer(uint32 guid)
 {
+    std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+
     for (auto itr = FlamestrikeBurnStates.begin(); itr != FlamestrikeBurnStates.end();)
     {
         if (itr->first.CasterGuid == guid)
@@ -573,16 +577,21 @@ class spell_mage_flamestrike_mastery : public SpellScript
         uint32 const targetGuid = uint32(target->GetGUID().GetCounter());
         uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
 
-        FlamestrikeBurnState& burnState = FlamestrikeBurnStates[{ casterGuid, targetGuid }];
-        if (burnState.ExpiresAtMs <= nowMs)
-            burnState.Stacks = 0;
+        uint8 burnStacks = 0;
+        {
+            std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+            FlamestrikeBurnState& burnState = FlamestrikeBurnStates[{ casterGuid, targetGuid }];
+            if (burnState.ExpiresAtMs <= nowMs)
+                burnState.Stacks = 0;
 
-        burnState.Stacks = std::min<uint8>(_effects.GoldMaxStacks, uint8(burnState.Stacks + 1));
-        burnState.ExpiresAtMs = nowMs + FLAMESTRIKE_BURN_STATE_TTL_MS;
+            burnState.Stacks = std::min<uint8>(_effects.GoldMaxStacks, uint8(burnState.Stacks + 1));
+            burnState.ExpiresAtMs = nowMs + FLAMESTRIKE_BURN_STATE_TTL_MS;
+            burnStacks = burnState.Stacks;
+        }
 
         int32 const burnTotal = int32(std::lround((float(baseDamage) * _effects.GoldBurnDamagePct) / 100.0f));
         int32 const perTick = std::max<int32>(1, burnTotal / int32(burnInfo->GetMaxTicks()));
-        int32 const stackedPerTick = std::max<int32>(1, perTick * burnState.Stacks);
+        int32 const stackedPerTick = std::max<int32>(1, perTick * burnStacks);
 
         ApplyStackingIgniteDot(
             _playerCaster,
@@ -795,25 +804,30 @@ class spell_mage_ignite_mastery_pool : public AuraScript
 
         uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
         IgniteCarryKey const key{ uint32(caster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) };
-        auto itr = IgniteCarryStates.find(key);
-        if (itr == IgniteCarryStates.end() || itr->second.ExpiresAtMs <= nowMs)
-            return;
+        IgniteCarryState carryState;
+        {
+            std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+            auto itr = IgniteCarryStates.find(key);
+            if (itr == IgniteCarryStates.end() || itr->second.ExpiresAtMs <= nowMs)
+                return;
+
+            carryState = itr->second;
+            IgniteCarryStates.erase(itr);
+        }
 
         if (Aura* igniteAura = GetAura())
         {
             if (AuraEffect* igniteEffect = igniteAura->GetEffect(EFFECT_0))
             {
-                igniteEffect->SetAmount(std::max<int32>(igniteEffect->GetAmount(), itr->second.TickAmount));
+                igniteEffect->SetAmount(std::max<int32>(igniteEffect->GetAmount(), carryState.TickAmount));
                 igniteEffect->SetPeriodicTimer(IGNITE_FAST_TICK_INTERVAL_MS);
             }
 
-            int32 const mergedMaxDuration = std::max<int32>(igniteAura->GetMaxDuration(), itr->second.MaxDurationMs);
-            int32 const mergedDuration = std::max<int32>(igniteAura->GetDuration(), std::min<int32>(itr->second.DurationMs, mergedMaxDuration));
+            int32 const mergedMaxDuration = std::max<int32>(igniteAura->GetMaxDuration(), carryState.MaxDurationMs);
+            int32 const mergedDuration = std::max<int32>(igniteAura->GetDuration(), std::min<int32>(carryState.DurationMs, mergedMaxDuration));
             igniteAura->SetMaxDuration(mergedMaxDuration);
             igniteAura->SetDuration(mergedDuration);
         }
-
-        IgniteCarryStates.erase(itr);
     }
 
     void HandleEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
@@ -834,7 +848,10 @@ class spell_mage_ignite_mastery_pool : public AuraScript
         state.DurationMs = std::max<int32>(0, aura->GetDuration());
         state.MaxDurationMs = std::max<int32>(0, aura->GetMaxDuration());
         state.ExpiresAtMs = nowMs + IGNITE_CARRY_TTL_MS;
-        IgniteCarryStates[{ uint32(caster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) }] = state;
+        {
+            std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+            IgniteCarryStates[{ uint32(caster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) }] = state;
+        }
     }
 
     void HandlePeriodicUpdate(AuraEffect* aurEff)

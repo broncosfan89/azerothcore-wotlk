@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 #include <unordered_map>
 
 namespace
@@ -52,6 +53,7 @@ uint32 constexpr THUNDER_CLAP_XP_GUARD_MS = 350;
 uint32 constexpr THUNDER_CLAP_ECHO_TOKEN_TTL_MS = 2000;
 
 std::unordered_map<uint32, ThunderClapEchoToken> ThunderClapEchoTokens;
+std::mutex ThunderClapEchoTokensMutex;
 
 ThunderClapMasteryEffects BuildThunderClapMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -120,6 +122,7 @@ Aura* FindRendAuraByCaster(Unit* target, ObjectGuid casterGuid)
 
 void ClearSpellMasteryWarriorRuntimeStateForPlayer(uint32 guid)
 {
+    std::lock_guard<std::mutex> lock(ThunderClapEchoTokensMutex);
     ThunderClapEchoTokens.erase(guid);
 }
 
@@ -150,13 +153,16 @@ class spell_war_thunder_clap_mastery : public SpellScript
         if (_isTriggeredCast)
         {
             uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
-            auto itr = ThunderClapEchoTokens.find(_casterGuidLow);
-            if (itr != ThunderClapEchoTokens.end() && itr->second.PendingCasts > 0 && itr->second.ExpiresAtMs > nowMs)
             {
-                _isGoldEchoCast = true;
-                _goldEchoDamagePct = itr->second.DamagePct;
-                if (--itr->second.PendingCasts == 0)
-                    ThunderClapEchoTokens.erase(itr);
+                std::lock_guard<std::mutex> lock(ThunderClapEchoTokensMutex);
+                auto itr = ThunderClapEchoTokens.find(_casterGuidLow);
+                if (itr != ThunderClapEchoTokens.end() && itr->second.PendingCasts > 0 && itr->second.ExpiresAtMs > nowMs)
+                {
+                    _isGoldEchoCast = true;
+                    _goldEchoDamagePct = itr->second.DamagePct;
+                    if (--itr->second.PendingCasts == 0)
+                        ThunderClapEchoTokens.erase(itr);
+                }
             }
         }
 
@@ -261,7 +267,10 @@ class spell_war_thunder_clap_mastery : public SpellScript
         token.DamagePct = _effects.GoldEchoDamagePct;
         token.PendingCasts = 1;
         token.ExpiresAtMs = uint32(GameTime::GetGameTimeMS().count()) + THUNDER_CLAP_ECHO_TOKEN_TTL_MS;
-        ThunderClapEchoTokens[_casterGuidLow] = token;
+        {
+            std::lock_guard<std::mutex> lock(ThunderClapEchoTokensMutex);
+            ThunderClapEchoTokens[_casterGuidLow] = token;
+        }
 
         _goldEchoTriggered = true;
         _playerCaster->CastSpell(_playerCaster, _config->AllowedSpellId, TRIGGERED_FULL_MASK);

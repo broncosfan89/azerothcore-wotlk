@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 #include <unordered_map>
 
 namespace
@@ -117,6 +118,7 @@ float constexpr CHAIN_LIGHTNING_BASE_JUMP_MULTIPLIER = 0.70f;
 
 std::unordered_map<ChainLightningGoldDebuffKey, ChainLightningGoldDebuffState, ChainLightningGoldDebuffKeyHash> ChainLightningGoldDebuffStates;
 std::unordered_map<LavaBurstSilverDebuffKey, LavaBurstSilverDebuffState, LavaBurstSilverDebuffKeyHash> LavaBurstSilverDebuffStates;
+std::mutex SpellMasteryShamanStateMutex;
 
 ChainLightningMasteryEffects BuildChainLightningMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -210,6 +212,7 @@ void ApplyOrRefreshLavaBurstSilverDebuff(Player* caster, Unit* target, float fir
     };
 
     uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    std::lock_guard<std::mutex> lock(SpellMasteryShamanStateMutex);
     LavaBurstSilverDebuffState& state = LavaBurstSilverDebuffStates[key];
     state.FireDamageTakenPct = std::max(state.FireDamageTakenPct, fireDamageTakenPct);
     state.ExpiresAtMs = nowMs + LAVA_BURST_SILVER_DEBUFF_TTL_MS;
@@ -226,6 +229,7 @@ float GetLavaBurstSilverDebuffPct(Player* caster, Unit* target)
         uint32(target->GetGUID().GetCounter())
     };
 
+    std::lock_guard<std::mutex> lock(SpellMasteryShamanStateMutex);
     auto itr = LavaBurstSilverDebuffStates.find(key);
     if (itr == LavaBurstSilverDebuffStates.end())
         return 0.0f;
@@ -299,6 +303,7 @@ uint8 GetActiveGoldDebuffStacks(Player* caster, Unit* target)
         uint32(target->GetGUID().GetCounter())
     };
 
+    std::lock_guard<std::mutex> lock(SpellMasteryShamanStateMutex);
     auto itr = ChainLightningGoldDebuffStates.find(key);
     if (itr == ChainLightningGoldDebuffStates.end())
         return 0;
@@ -316,6 +321,7 @@ uint8 GetActiveGoldDebuffStacks(Player* caster, Unit* target)
 
 void ClearSpellMasteryShamanRuntimeStateForPlayer(uint32 guid)
 {
+    std::lock_guard<std::mutex> lock(SpellMasteryShamanStateMutex);
     for (auto itr = ChainLightningGoldDebuffStates.begin(); itr != ChainLightningGoldDebuffStates.end();)
     {
         if (itr->first.CasterGuid == guid || itr->first.TargetGuid == guid)
@@ -445,6 +451,7 @@ class spell_sha_chain_lightning_mastery : public SpellScript
         };
 
         uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+        std::lock_guard<std::mutex> lock(SpellMasteryShamanStateMutex);
         ChainLightningGoldDebuffState& state = ChainLightningGoldDebuffStates[key];
         if (state.ExpiresAtMs <= nowMs)
             state.Stacks = 0;
