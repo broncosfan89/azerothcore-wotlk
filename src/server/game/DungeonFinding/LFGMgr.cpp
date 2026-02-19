@@ -628,32 +628,28 @@ namespace lfg
             }
             else if (grp)
             {
-                if (grp->GetMembersCount() > MAXGROUPSIZE)
-                    joinData.result = LFG_JOIN_TOO_MUCH_MEMBERS;
-                else
+                uint8 memberCount = 0;
+                for (GroupReference* itr = grp->GetFirstMember(); itr != nullptr && joinData.result == LFG_JOIN_OK; itr = itr->next())
                 {
-                    uint8 memberCount = 0;
-                    for (GroupReference* itr = grp->GetFirstMember(); itr != nullptr && joinData.result == LFG_JOIN_OK; itr = itr->next())
+                    if (Player* plrg = itr->GetSource())
                     {
-                        if (Player* plrg = itr->GetSource())
+                        if (plrg->HasAura(LFG_SPELL_DUNGEON_DESERTER))
                         {
-                            if (plrg->HasAura(LFG_SPELL_DUNGEON_DESERTER))
-                            {
-                                joinData.result = LFG_JOIN_PARTY_DESERTER;
-                            }
-                            else if (plrg->InBattleground() || (plrg->InBattlegroundQueue() && !sWorld->getBoolConfig(CONFIG_ALLOW_JOIN_BG_AND_LFG)))
-                            {
-                                joinData.result = LFG_JOIN_USING_BG_SYSTEM;
-                            }
-
-                            ++memberCount;
-                            players.insert(plrg->GetGUID());
+                            joinData.result = LFG_JOIN_PARTY_DESERTER;
                         }
-                    }
+                        else if (plrg->InBattleground() || (plrg->InBattlegroundQueue() && !sWorld->getBoolConfig(CONFIG_ALLOW_JOIN_BG_AND_LFG)))
+                        {
+                            joinData.result = LFG_JOIN_USING_BG_SYSTEM;
+                        }
 
-                    if (joinData.result == LFG_JOIN_OK && memberCount != grp->GetMembersCount())
-                        joinData.result = LFG_JOIN_DISCONNECTED;
+                        ++memberCount;
+                        players.insert(plrg->GetGUID());
+                    }
                 }
+
+                // Use active members here so stale/offline slots do not cause false "too many members" errors.
+                if (joinData.result == LFG_JOIN_OK && memberCount > MAXGROUPSIZE)
+                    joinData.result = LFG_JOIN_TOO_MUCH_MEMBERS;
             }
             else
                 players.insert(player->GetGUID());
