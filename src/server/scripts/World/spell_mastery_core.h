@@ -33,6 +33,8 @@ enum SpellMasteryConstants : uint32
     SPELL_MAGE_PYROBLAST_RANK_10 = 33938,
     SPELL_MAGE_FLAMESTRIKE_RANK_1 = 2120,
     SPELL_MAGE_FLAMESTRIKE_RANK_3 = 8422,
+    SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1 = 421,
+    SPELL_SHAMAN_LAVA_BURST_RANK_1 = 51505,
     SPELL_WARRIOR_THUNDER_CLAP_RANK_1 = 6343,
     SPELL_WARRIOR_THUNDER_CLAP_RANK_9 = 47502,
     SPELL_WARRIOR_REND_RANK_1 = 772,
@@ -124,10 +126,12 @@ void ClearSpellMasteryDruidRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryWarriorRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryWarlockRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryRogueRuntimeStateForPlayer(uint32 guid);
+void ClearSpellMasteryShamanRuntimeStateForPlayer(uint32 guid);
 void AddSC_spell_mastery_mage();
 void AddSC_spell_mastery_druid();
 void AddSC_spell_mastery_warrior();
 void AddSC_spell_mastery_warlock();
 void AddSC_spell_mastery_rogue();
+void AddSC_spell_mastery_shaman();
 
 #endif

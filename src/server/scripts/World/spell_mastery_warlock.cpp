@@ -143,7 +143,7 @@ class spell_warl_haunt_mastery : public SpellScript
     void HandleAfterHit()
     {
         Unit* target = GetHitUnit();
-        if (!target || !_playerCaster->IsValidAttackTarget(target))
+        if (!target || !_playerCaster->IsHostileTo(target))
             return;
 
         if (!_xpAwarded && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, HAUNT_XP_GUARD_MS))
@@ -160,6 +160,9 @@ class spell_warl_haunt_mastery : public SpellScript
             _playerCaster->ModifySpellCooldown(_config->AllowedSpellId, -_effects.GoldCooldownReductionMs);
             _cooldownAdjusted = true;
         }
+
+        if (!_playerCaster->IsValidAttackTarget(target))
+            return;
 
         TryRefreshDiamondDots(target);
     }

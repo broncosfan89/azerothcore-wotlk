@@ -34,11 +34,13 @@
 
 namespace SpellMastery
 {
-std::array<ManagedSpellConfig, 8> const ManagedSpellConfigs =
+std::array<ManagedSpellConfig, 10> const ManagedSpellConfigs =
 { {
     { SPELL_MAGE_FIREBALL_RANK_1, SPELL_MAGE_FIREBALL_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MAGE_PYROBLAST_RANK_10, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_FLAMESTRIKE_RANK_1, SPELL_MAGE_FLAMESTRIKE_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1, SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_SHAMAN_LAVA_BURST_RANK_1, SPELL_SHAMAN_LAVA_BURST_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARRIOR_THUNDER_CLAP_RANK_1, SPELL_WARRIOR_THUNDER_CLAP_RANK_9, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_ROGUE_KILLING_SPREE, SPELL_ROGUE_KILLING_SPREE, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARLOCK_HAUNT_RANK_1, SPELL_WARLOCK_HAUNT_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -219,6 +221,7 @@ void ClearSpellMasteryRuntimeStateForPlayer(uint32 guid)
     ClearSpellMasteryWarriorRuntimeStateForPlayer(guid);
     ClearSpellMasteryWarlockRuntimeStateForPlayer(guid);
     ClearSpellMasteryRogueRuntimeStateForPlayer(guid);
+    ClearSpellMasteryShamanRuntimeStateForPlayer(guid);
 }
 
 bool ShouldAwardSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint32 cooldownMs)
@@ -291,6 +294,9 @@ void EnforceManagedSpellBaseRankOnly(Player* player, ManagedSpellConfig const& c
             hasAnyRankInChain = true;
     }
 
+    if (!hasAnyRankInChain && config.BaseSpellId == SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1 && player->getClass() == CLASS_SHAMAN)
+        hasAnyRankInChain = true;
+
     if (hasAnyRankInChain && !player->HasSpell(config.AllowedSpellId))
     {
         // Upgrade managed spells to the configured baseline rank before pruning other chain ranks.
@@ -306,6 +312,18 @@ void EnforceAllManagedSpellBaseRanks(Player* player)
 {
     for (ManagedSpellConfig const& config : ManagedSpellConfigs)
         EnforceManagedSpellBaseRankOnly(player, config);
+}
+
+void EnsureShamanInstantLevelOneSpells(Player* player)
+{
+    if (!player || player->getClass() != CLASS_SHAMAN || player->GetLevel() < 1)
+        return;
+
+    if (!player->HasSpell(SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1))
+        player->learnSpell(SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1);
+
+    if (!player->HasSpell(SPELL_SHAMAN_LAVA_BURST_RANK_1))
+        player->learnSpell(SPELL_SHAMAN_LAVA_BURST_RANK_1);
 }
 
 void AddSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint64 xpGain)
@@ -361,6 +379,7 @@ public:
         if (!player)
             return;
 
+        SpellMastery::EnsureShamanInstantLevelOneSpells(player);
         SpellMastery::EnforceAllManagedSpellBaseRanks(player);
 
         for (SpellMastery::ManagedSpellConfig const& config : SpellMastery::ManagedSpellConfigs)
@@ -375,6 +394,7 @@ public:
         if (!player)
             return;
 
+        SpellMastery::EnsureShamanInstantLevelOneSpells(player);
         SpellMastery::EnforceAllManagedSpellBaseRanks(player);
     }
 
@@ -417,4 +437,5 @@ void AddSC_spell_mastery_fireball()
     AddSC_spell_mastery_warrior();
     AddSC_spell_mastery_warlock();
     AddSC_spell_mastery_rogue();
+    AddSC_spell_mastery_shaman();
 }

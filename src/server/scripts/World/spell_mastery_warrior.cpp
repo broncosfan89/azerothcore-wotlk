@@ -189,7 +189,7 @@ class spell_war_thunder_clap_mastery : public SpellScript
     void HandleAfterHit()
     {
         Unit* target = GetHitUnit();
-        if (!target || !_playerCaster->IsValidAttackTarget(target))
+        if (!target || !_playerCaster->IsHostileTo(target))
             return;
 
         if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, THUNDER_CLAP_XP_GUARD_MS))
@@ -199,6 +199,9 @@ class spell_war_thunder_clap_mastery : public SpellScript
         }
 
         if (_isTriggeredCast)
+            return;
+
+        if (!_playerCaster->IsValidAttackTarget(target))
             return;
 
         TryApplySilverRend(target);

@@ -382,13 +382,13 @@ class spell_mage_fireball_mastery : public SpellScript
     void HandleOnHit()
     {
         Unit* target = GetHitUnit();
-        if (!target || !_playerCaster->IsValidAttackTarget(target))
+        if (!target || !_playerCaster->IsHostileTo(target))
             return;
 
         if (!_isTriggeredCast)
             SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
 
-        if (_isTriggeredCast)
+        if (_isTriggeredCast || !_playerCaster->IsValidAttackTarget(target))
             return;
 
         TryApplySilverSplashDamage(target);
@@ -515,7 +515,7 @@ class spell_mage_flamestrike_mastery : public SpellScript
     void HandleOnHit()
     {
         Unit* target = GetHitUnit();
-        if (!target || !_playerCaster->IsValidAttackTarget(target))
+        if (!target || !_playerCaster->IsHostileTo(target))
             return;
 
         if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, FLAMESTRIKE_XP_GUARD_MS))
@@ -523,6 +523,9 @@ class spell_mage_flamestrike_mastery : public SpellScript
             SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
             _xpAwarded = true;
         }
+
+        if (!_playerCaster->IsValidAttackTarget(target))
+            return;
 
         TryApplySilverExtraDamage(target);
         TryApplyGoldStackingBurn(target);
@@ -659,7 +662,7 @@ class spell_mage_pyroblast_ignite_pool : public SpellScript
     void HandleAfterHit()
     {
         Unit* target = GetHitUnit();
-        if (!target || !_playerCaster->IsValidAttackTarget(target))
+        if (!target || !_playerCaster->IsHostileTo(target))
             return;
 
         int32 const hitDamage = std::max<int32>(GetHitDamage(), _finalHitDamage);
@@ -668,6 +671,9 @@ class spell_mage_pyroblast_ignite_pool : public SpellScript
 
         if (!_isTriggeredCast)
             SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+
+        if (!_playerCaster->IsValidAttackTarget(target))
+            return;
 
         TryApplySilverSplashDamage(target, hitDamage);
         TryApplyGoldStackingBurn(target, hitDamage);
