@@ -180,13 +180,15 @@ class spell_rog_killing_spree_weapon_mastery : public SpellScript
         if (hitDamage <= 0)
             return;
 
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+
         if (_effects.BronzeDamageBonusPct > 0.0f)
         {
             int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.BronzeDamageBonusPct / 100.0f))));
             hitDamage = std::max(hitDamage, scaledDamage);
-            SetHitDamage(hitDamage);
         }
 
+        SetHitDamage(hitDamage);
         TryApplyGoldBleed(target, hitDamage);
         TryTriggerDiamondExtraHit(target);
     }

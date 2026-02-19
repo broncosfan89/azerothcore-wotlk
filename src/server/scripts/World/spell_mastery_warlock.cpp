@@ -131,6 +131,8 @@ class spell_warl_haunt_mastery : public SpellScript
         if (hitDamage <= 0)
             return;
 
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+
         if (_effects.IronDamageBonusPct > 0.0f)
         {
             int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.IronDamageBonusPct / 100.0f))));

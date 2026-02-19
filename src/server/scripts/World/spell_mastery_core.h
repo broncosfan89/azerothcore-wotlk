@@ -22,6 +22,7 @@
 #include <cstddef>
 
 class Player;
+struct SpellInfo;
 
 namespace SpellMastery
 {
@@ -35,6 +36,11 @@ enum SpellMasteryConstants : uint32
     SPELL_MAGE_FLAMESTRIKE_RANK_3 = 8422,
     SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1 = 421,
     SPELL_SHAMAN_LAVA_BURST_RANK_1 = 51505,
+    SPELL_PRIEST_POWER_WORD_SHIELD_RANK_1 = 17,
+    SPELL_PRIEST_RENEW_RANK_1 = 139,
+    SPELL_PRIEST_WEAKENED_SOUL = 6788,
+    SPELL_PRIEST_REFLECTIVE_SHIELD_TRIGGERED = 33619,
+    SPELL_PALADIN_CONSECRATION_RANK_1 = 26573,
     SPELL_WARRIOR_THUNDER_CLAP_RANK_1 = 6343,
     SPELL_WARRIOR_THUNDER_CLAP_RANK_9 = 47502,
     SPELL_WARRIOR_REND_RANK_1 = 772,
@@ -46,6 +52,10 @@ enum SpellMasteryConstants : uint32
     SPELL_DRUID_REJUVENATION_RANK_1 = 774,
     SPELL_DRUID_REJUVENATION_RANK_3 = 1430,
     SPELL_DRUID_REJUVENATION_RANK_5 = 2091,
+    SPELL_DRUID_CAT_FORM_RANK_1 = 768,
+    SPELL_DRUID_CLAW_RANK_1 = 1082,
+    SPELL_DRUID_RIP_RANK_1 = 1079,
+    SPELL_DRUID_SWIPE_CAT_RANK_1 = 62078,
     SPELL_DRUID_REGROWTH_RANK_1 = 8936,
     SPELL_DRUID_REGROWTH_RANK_3 = 8939,
     SPELL_MAGE_IGNITE = 12654
@@ -119,6 +129,8 @@ bool IsManagedRankSpell(uint32 spellId, ManagedSpellConfig const** outConfig = n
 void EnforceManagedSpellBaseRankOnly(Player* player, ManagedSpellConfig const& config);
 void EnforceAllManagedSpellBaseRanks(Player* player);
 void AddSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint64 xpGain);
+float ComputeEarlyAccessSpellScale(Player* player, SpellInfo const* spellInfo);
+int32 ApplyEarlyAccessSpellScale(Player* player, SpellInfo const* spellInfo, int32 amount);
 }
 
 void ClearSpellMasteryMageRuntimeStateForPlayer(uint32 guid);
@@ -127,11 +139,15 @@ void ClearSpellMasteryWarriorRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryWarlockRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryRogueRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryShamanRuntimeStateForPlayer(uint32 guid);
+void ClearSpellMasteryPaladinRuntimeStateForPlayer(uint32 guid);
+void ClearSpellMasteryPriestRuntimeStateForPlayer(uint32 guid);
 void AddSC_spell_mastery_mage();
 void AddSC_spell_mastery_druid();
 void AddSC_spell_mastery_warrior();
 void AddSC_spell_mastery_warlock();
 void AddSC_spell_mastery_rogue();
 void AddSC_spell_mastery_shaman();
+void AddSC_spell_mastery_paladin();
+void AddSC_spell_mastery_priest();
 
 #endif

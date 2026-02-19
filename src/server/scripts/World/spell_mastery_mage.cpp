@@ -369,6 +369,8 @@ class spell_mage_fireball_mastery : public SpellScript
         if (hitDamage <= 0)
             return;
 
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+
         if (_effects.DamageBonusPct > 0.0f)
         {
             int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.DamageBonusPct / 100.0f))));
@@ -501,6 +503,8 @@ class spell_mage_flamestrike_mastery : public SpellScript
         int32 hitDamage = GetHitDamage();
         if (hitDamage <= 0)
             return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
 
         if (_effects.DamageBonusPct > 0.0f)
         {
@@ -648,6 +652,8 @@ class spell_mage_pyroblast_ignite_pool : public SpellScript
         int32 hitDamage = GetHitDamage();
         if (hitDamage <= 0)
             return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
 
         if (_effects.DamageBonusPct > 0.0f)
         {

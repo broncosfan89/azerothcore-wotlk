@@ -58,6 +58,24 @@ struct RegrowthMasteryEffects
     float DiamondBonusDirectHealPct = 0.0f;
 };
 
+struct SwipeCatMasteryEffects
+{
+    int32 IronEnergyCostReduction = 0;
+    float BronzeDamageBonusPct = 0.0f;
+    int32 SilverEnergyRefund = 0;
+    float GoldBleedPct = 0.0f;
+    float DiamondHealPct = 0.0f;
+};
+
+struct RipMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    int32 BronzeTickIntervalMs = 2000;
+    float SilverDamageTakenPct = 0.0f;
+    int32 GoldDurationBonusMs = 0;
+    bool DiamondFullDamageAtOneComboPoint = false;
+};
+
 struct RejuvenationStackKey
 {
     uint32 CasterGuid;
@@ -108,6 +126,31 @@ struct RegrowthStackState
     uint32 ExpiresAtMs = 0;
 };
 
+struct RipSilverDamageTakenKey
+{
+    uint32 CasterGuid;
+    uint32 TargetGuid;
+
+    bool operator==(RipSilverDamageTakenKey const& other) const
+    {
+        return CasterGuid == other.CasterGuid && TargetGuid == other.TargetGuid;
+    }
+};
+
+struct RipSilverDamageTakenKeyHash
+{
+    std::size_t operator()(RipSilverDamageTakenKey const& key) const
+    {
+        return (std::size_t(key.CasterGuid) << 32) ^ key.TargetGuid;
+    }
+};
+
+struct RipSilverDamageTakenState
+{
+    float DamageTakenPct = 0.0f;
+    uint32 ExpiresAtMs = 0;
+};
+
 float constexpr REJUVENATION_SILVER_SPLASH_RADIUS = 15.0f;
 int32 constexpr REJUVENATION_TICK_INTERVAL_MS = 3000;
 uint32 constexpr REJUVENATION_STACK_STATE_TTL_MS = 35000;
@@ -116,9 +159,14 @@ float constexpr REGROWTH_SILVER_SPLASH_RADIUS = 15.0f;
 int32 constexpr REGROWTH_TICK_INTERVAL_MS = 3000;
 uint32 constexpr REGROWTH_STACK_STATE_TTL_MS = 35000;
 uint32 constexpr REGROWTH_XP_GUARD_MS = 350;
+uint32 constexpr SWIPE_CAT_XP_GUARD_MS = 250;
+uint32 constexpr RIP_XP_GUARD_MS = 250;
+int32 constexpr RIP_BASE_TICK_INTERVAL_MS = 2000;
+int32 constexpr RIP_MIN_TICK_INTERVAL_MS = 800;
 
 std::unordered_map<RejuvenationStackKey, RejuvenationStackState, RejuvenationStackKeyHash> RejuvenationStackStates;
 std::unordered_map<RegrowthStackKey, RegrowthStackState, RegrowthStackKeyHash> RegrowthStackStates;
+std::unordered_map<RipSilverDamageTakenKey, RipSilverDamageTakenState, RipSilverDamageTakenKeyHash> RipSilverDamageTakenStates;
 
 RejuvenationMasteryEffects BuildRejuvenationMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -204,6 +252,85 @@ RegrowthMasteryEffects BuildRegrowthMasteryEffects(SpellMastery::SpellMasteryPro
 
     return effects;
 }
+
+SwipeCatMasteryEffects BuildSwipeCatMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    SwipeCatMasteryEffects effects;
+
+    uint8 const ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 const bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    if (ironLevel > 0)
+        effects.IronEnergyCostReduction = int32(ironLevel) * 2;
+
+    if (bronzeLevel > 0)
+        effects.BronzeDamageBonusPct = float(bronzeLevel) * 12.0f;
+
+    if (silverLevel > 0)
+        effects.SilverEnergyRefund = 1 + int32(silverLevel);
+
+    if (goldLevel > 0)
+        effects.GoldBleedPct = 10.0f + (float(goldLevel - 1) * (20.0f / 9.0f));
+
+    if (diamondLevel > 0)
+        effects.DiamondHealPct = 8.0f + (float(diamondLevel - 1) * (22.0f / 9.0f));
+
+    return effects;
+}
+
+RipMasteryEffects BuildRipMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    RipMasteryEffects effects;
+
+    uint8 const ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 const bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    if (ironLevel > 0)
+        effects.IronDamageBonusPct = float(ironLevel) * 10.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeTickIntervalMs = std::max<int32>(RIP_MIN_TICK_INTERVAL_MS, RIP_BASE_TICK_INTERVAL_MS - (int32(bronzeLevel) * 100));
+
+    if (silverLevel > 0)
+        effects.SilverDamageTakenPct = float(silverLevel) * 2.0f;
+
+    if (goldLevel > 0)
+        effects.GoldDurationBonusMs = int32(goldLevel) * 500;
+
+    effects.DiamondFullDamageAtOneComboPoint = diamondLevel > 0;
+    return effects;
+}
+
+float GetRipSilverDamageTakenPct(Player* caster, Unit* target)
+{
+    if (!caster || !target)
+        return 0.0f;
+
+    RipSilverDamageTakenKey const key
+    {
+        uint32(caster->GetGUID().GetCounter()),
+        uint32(target->GetGUID().GetCounter())
+    };
+
+    auto itr = RipSilverDamageTakenStates.find(key);
+    if (itr == RipSilverDamageTakenStates.end())
+        return 0.0f;
+
+    uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    if (itr->second.ExpiresAtMs <= nowMs)
+    {
+        RipSilverDamageTakenStates.erase(itr);
+        return 0.0f;
+    }
+
+    return itr->second.DamageTakenPct;
+}
 }
 
 void ClearSpellMasteryDruidRuntimeStateForPlayer(uint32 guid)
@@ -220,6 +347,14 @@ void ClearSpellMasteryDruidRuntimeStateForPlayer(uint32 guid)
     {
         if (itr->first.CasterGuid == guid || itr->first.TargetGuid == guid)
             itr = RegrowthStackStates.erase(itr);
+        else
+            ++itr;
+    }
+
+    for (auto itr = RipSilverDamageTakenStates.begin(); itr != RipSilverDamageTakenStates.end();)
+    {
+        if (itr->first.CasterGuid == guid || itr->first.TargetGuid == guid)
+            itr = RipSilverDamageTakenStates.erase(itr);
         else
             ++itr;
     }
@@ -352,6 +487,8 @@ class spell_dru_rejuvenation_mastery_aura : public AuraScript
     {
         if (!_playerCaster || amount <= 0)
             return;
+
+        amount = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), amount);
 
         Unit* target = GetUnitOwner();
         if (!target)
@@ -527,6 +664,8 @@ class spell_dru_regrowth_mastery : public SpellScript
         if (hitHeal <= 0)
             return;
 
+        hitHeal = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitHeal);
+
         if (_effects.IronDirectHealBonusPct > 0.0f)
         {
             int32 const scaledHeal = int32(std::lround(float(hitHeal) * (1.0f + (_effects.IronDirectHealBonusPct / 100.0f))));
@@ -610,6 +749,8 @@ class spell_dru_regrowth_mastery_aura : public AuraScript
     {
         if (!_playerCaster || amount <= 0)
             return;
+
+        amount = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), amount);
 
         Unit* target = GetUnitOwner();
         if (!target)
@@ -720,8 +861,254 @@ private:
     RegrowthMasteryEffects _effects;
 };
 
+class spell_dru_swipe_cat_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_dru_swipe_cat_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_DRUID_SWIPE_CAT_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildSwipeCatMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+        return true;
+    }
+
+    void HandleDirectDamage()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+
+        float totalDamageBonusPct = _effects.BronzeDamageBonusPct;
+        totalDamageBonusPct += GetRipSilverDamageTakenPct(_playerCaster, target);
+        if (totalDamageBonusPct > 0.0f)
+        {
+            int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (totalDamageBonusPct / 100.0f))));
+            hitDamage = std::max(hitDamage, scaledDamage);
+        }
+        SetHitDamage(hitDamage);
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, SWIPE_CAT_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        if (!_silverRefunded && !_isTriggeredCast && _effects.SilverEnergyRefund > 0)
+        {
+            _playerCaster->ModifyPower(POWER_ENERGY, _effects.SilverEnergyRefund);
+            _silverRefunded = true;
+        }
+
+        if (_effects.GoldBleedPct > 0.0f)
+        {
+            int32 bleedAmount = std::max<int32>(1, int32(std::lround((float(hitDamage) * _effects.GoldBleedPct) / 100.0f)));
+            _playerCaster->CastCustomSpell(target, SpellMastery::SPELL_WARRIOR_REND_RANK_1, &bleedAmount, nullptr, nullptr, true);
+        }
+
+        if (_effects.DiamondHealPct > 0.0f && _playerCaster->IsAlive())
+        {
+            int32 const healAmount = std::max<int32>(1, int32(std::lround((float(hitDamage) * _effects.DiamondHealPct) / 100.0f)));
+            _playerCaster->ModifyHealth(healAmount);
+        }
+    }
+
+    void HandleAfterCast()
+    {
+        if (_isTriggeredCast || _effects.IronEnergyCostReduction <= 0)
+            return;
+
+        _playerCaster->ModifyPower(POWER_ENERGY, _effects.IronEnergyCostReduction);
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_dru_swipe_cat_mastery::HandleDirectDamage);
+        AfterCast += SpellCastFn(spell_dru_swipe_cat_mastery::HandleAfterCast);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    SwipeCatMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _xpAwarded = false;
+    bool _silverRefunded = false;
+};
+
+class spell_dru_rip_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_dru_rip_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_DRUID_RIP_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildRipMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+
+        if (_effects.GoldDurationBonusMs > 0)
+        {
+            int32 const baseDuration = GetSpellInfo()->GetMaxDuration();
+            if (baseDuration > 0)
+                GetSpell()->SetSpellValue(SPELLVALUE_AURA_DURATION, baseDuration + _effects.GoldDurationBonusMs);
+        }
+
+        return true;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, RIP_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+    }
+
+    void Register() override
+    {
+        AfterHit += SpellHitFn(spell_dru_rip_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    RipMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _xpAwarded = false;
+};
+
+class spell_dru_rip_mastery_aura : public AuraScript
+{
+    PrepareAuraScript(spell_dru_rip_mastery_aura);
+
+    bool Load() override
+    {
+        Unit* caster = GetCaster();
+        if (!caster || !caster->IsPlayer() || !GetUnitOwner())
+            return false;
+
+        _playerCaster = caster->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_DRUID_RIP_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildRipMasteryEffects(_progress, *_config);
+        return true;
+    }
+
+    void CalculatePeriodicDamageAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    {
+        if (!_playerCaster || amount <= 0)
+            return;
+
+        amount = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), amount);
+
+        float totalBonusPct = _effects.IronDamageBonusPct + _effects.SilverDamageTakenPct;
+        if (totalBonusPct > 0.0f)
+        {
+            int32 const scaledAmount = int32(std::lround(float(amount) * (1.0f + (totalBonusPct / 100.0f))));
+            amount = std::max(amount, scaledAmount);
+        }
+
+        if (_effects.DiamondFullDamageAtOneComboPoint)
+        {
+            uint8 comboPoints = std::max<uint8>(1, _playerCaster->GetComboPoints());
+            if (comboPoints < 5)
+            {
+                int32 const scaledForComboPoints = int32(std::lround(float(amount) * (5.0f / float(comboPoints))));
+                amount = std::max(amount, scaledForComboPoints);
+            }
+        }
+    }
+
+    void HandlePeriodicUpdate(AuraEffect* aurEff)
+    {
+        if (!aurEff || _effects.BronzeTickIntervalMs <= 0)
+            return;
+
+        if (aurEff->GetPeriodicTimer() > _effects.BronzeTickIntervalMs)
+            aurEff->SetPeriodicTimer(_effects.BronzeTickIntervalMs);
+    }
+
+    void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (!_playerCaster || _effects.SilverDamageTakenPct <= 0.0f)
+            return;
+
+        Unit* target = GetUnitOwner();
+        if (!target)
+            return;
+
+        int32 const durationMs = GetAura() ? GetAura()->GetDuration() : 0;
+        uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+        RipSilverDamageTakenStates[{ uint32(_playerCaster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) }] =
+        {
+            _effects.SilverDamageTakenPct,
+            nowMs + uint32(std::max<int32>(1000, durationMs))
+        };
+    }
+
+    void HandleEffectRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (!_playerCaster)
+            return;
+
+        Unit* target = GetUnitOwner();
+        if (!target)
+            return;
+
+        RipSilverDamageTakenStates.erase({ uint32(_playerCaster->GetGUID().GetCounter()), uint32(target->GetGUID().GetCounter()) });
+    }
+
+    void Register() override
+    {
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dru_rip_mastery_aura::CalculatePeriodicDamageAmount, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_dru_rip_mastery_aura::HandlePeriodicUpdate, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectApply += AuraEffectApplyFn(spell_dru_rip_mastery_aura::HandleEffectApply, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+        OnEffectRemove += AuraEffectRemoveFn(spell_dru_rip_mastery_aura::HandleEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    RipMasteryEffects _effects;
+};
+
 void AddSC_spell_mastery_druid()
 {
     RegisterSpellAndAuraScriptPair(spell_dru_rejuvenation_mastery, spell_dru_rejuvenation_mastery_aura);
     RegisterSpellAndAuraScriptPair(spell_dru_regrowth_mastery, spell_dru_regrowth_mastery_aura);
+    RegisterSpellScript(spell_dru_swipe_cat_mastery);
+    RegisterSpellAndAuraScriptPair(spell_dru_rip_mastery, spell_dru_rip_mastery_aura);
 }

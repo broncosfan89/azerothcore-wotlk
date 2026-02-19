@@ -28,24 +28,29 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
 
 namespace SpellMastery
 {
-std::array<ManagedSpellConfig, 10> const ManagedSpellConfigs =
+std::array<ManagedSpellConfig, 14> const ManagedSpellConfigs =
 { {
     { SPELL_MAGE_FIREBALL_RANK_1, SPELL_MAGE_FIREBALL_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MAGE_PYROBLAST_RANK_10, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_FLAMESTRIKE_RANK_1, SPELL_MAGE_FLAMESTRIKE_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1, SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_SHAMAN_LAVA_BURST_RANK_1, SPELL_SHAMAN_LAVA_BURST_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_PRIEST_POWER_WORD_SHIELD_RANK_1, SPELL_PRIEST_POWER_WORD_SHIELD_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_PALADIN_CONSECRATION_RANK_1, SPELL_PALADIN_CONSECRATION_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARRIOR_THUNDER_CLAP_RANK_1, SPELL_WARRIOR_THUNDER_CLAP_RANK_9, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_ROGUE_KILLING_SPREE, SPELL_ROGUE_KILLING_SPREE, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARLOCK_HAUNT_RANK_1, SPELL_WARLOCK_HAUNT_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_DRUID_REJUVENATION_RANK_1, SPELL_DRUID_REJUVENATION_RANK_5, SPELL_MASTERY_TIER_DIAMOND, 10 },
-    { SPELL_DRUID_REGROWTH_RANK_1, SPELL_DRUID_REGROWTH_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 }
+    { SPELL_DRUID_REGROWTH_RANK_1, SPELL_DRUID_REGROWTH_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_DRUID_RIP_RANK_1, SPELL_DRUID_RIP_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_DRUID_SWIPE_CAT_RANK_1, SPELL_DRUID_SWIPE_CAT_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 }
 } };
 
 char const SPELL_MASTERY_CHARACTER_TABLE[] = "character_spell_mastery";
@@ -53,6 +58,9 @@ char const SPELL_MASTERY_ADDON_PREFIX[] = "SMT";
 
 std::unordered_map<MasteryCacheKey, SpellMasteryProgress, MasteryCacheKeyHash> SpellMasteryCache;
 std::unordered_map<MasteryCacheKey, uint32, MasteryCacheKeyHash> SpellMasteryLastXpGrantMs;
+
+uint32 constexpr EARLY_ACCESS_LEVEL_OFFSET = 4;
+float constexpr EARLY_ACCESS_MIN_SCALE = 0.05f;
 
 ManagedSpellConfig const* GetManagedSpellConfigByBaseSpell(uint32 baseSpellId)
 {
@@ -96,6 +104,37 @@ uint64 GetSpellMasteryNextXpThreshold(SpellMasteryProgress const& progress, Mana
         return 0;
 
     return 100ull * progress.Tier * progress.TierLevel;
+}
+
+float ComputeEarlyAccessSpellScale(Player* player, SpellInfo const* spellInfo)
+{
+    if (!player || !spellInfo)
+        return 1.0f;
+
+    uint32 const playerLevel = std::max<uint32>(1, player->GetLevel());
+    uint32 const naturalLevel = std::max<uint32>(spellInfo->SpellLevel, spellInfo->BaseLevel);
+    if (naturalLevel <= 1 || playerLevel >= naturalLevel)
+        return 1.0f;
+
+    float const adjustedPlayer = float(playerLevel + EARLY_ACCESS_LEVEL_OFFSET);
+    float const adjustedNatural = float(naturalLevel + EARLY_ACCESS_LEVEL_OFFSET);
+    return std::clamp(adjustedPlayer / adjustedNatural, EARLY_ACCESS_MIN_SCALE, 1.0f);
+}
+
+int32 ApplyEarlyAccessSpellScale(Player* player, SpellInfo const* spellInfo, int32 amount)
+{
+    if (!amount)
+        return amount;
+
+    float const scale = ComputeEarlyAccessSpellScale(player, spellInfo);
+    if (scale >= 0.999f)
+        return amount;
+
+    int32 scaledAmount = int32(std::lround(float(amount) * scale));
+    if (amount > 0)
+        return std::max<int32>(1, scaledAmount);
+
+    return std::min<int32>(-1, scaledAmount);
 }
 
 void SendMasteryAddonMessage(Player* player, uint32 baseSpellId, uint8 tier, uint8 level, uint64 xp, uint64 next)
@@ -222,6 +261,8 @@ void ClearSpellMasteryRuntimeStateForPlayer(uint32 guid)
     ClearSpellMasteryWarlockRuntimeStateForPlayer(guid);
     ClearSpellMasteryRogueRuntimeStateForPlayer(guid);
     ClearSpellMasteryShamanRuntimeStateForPlayer(guid);
+    ClearSpellMasteryPaladinRuntimeStateForPlayer(guid);
+    ClearSpellMasteryPriestRuntimeStateForPlayer(guid);
 }
 
 bool ShouldAwardSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint32 cooldownMs)
@@ -297,6 +338,12 @@ void EnforceManagedSpellBaseRankOnly(Player* player, ManagedSpellConfig const& c
     if (!hasAnyRankInChain && config.BaseSpellId == SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1 && player->getClass() == CLASS_SHAMAN)
         hasAnyRankInChain = true;
 
+    if (!hasAnyRankInChain && config.BaseSpellId == SPELL_PALADIN_CONSECRATION_RANK_1 && player->getClass() == CLASS_PALADIN)
+        hasAnyRankInChain = true;
+
+    if (!hasAnyRankInChain && config.BaseSpellId == SPELL_PRIEST_POWER_WORD_SHIELD_RANK_1 && player->getClass() == CLASS_PRIEST)
+        hasAnyRankInChain = true;
+
     if (hasAnyRankInChain && !player->HasSpell(config.AllowedSpellId))
     {
         // Upgrade managed spells to the configured baseline rank before pruning other chain ranks.
@@ -324,6 +371,42 @@ void EnsureShamanInstantLevelOneSpells(Player* player)
 
     if (!player->HasSpell(SPELL_SHAMAN_LAVA_BURST_RANK_1))
         player->learnSpell(SPELL_SHAMAN_LAVA_BURST_RANK_1);
+}
+
+void EnsurePaladinInstantLevelOneSpells(Player* player)
+{
+    if (!player || player->getClass() != CLASS_PALADIN || player->GetLevel() < 1)
+        return;
+
+    if (!player->HasSpell(SPELL_PALADIN_CONSECRATION_RANK_1))
+        player->learnSpell(SPELL_PALADIN_CONSECRATION_RANK_1);
+}
+
+void EnsurePriestInstantLevelOneSpells(Player* player)
+{
+    if (!player || player->getClass() != CLASS_PRIEST || player->GetLevel() < 1)
+        return;
+
+    if (!player->HasSpell(SPELL_PRIEST_POWER_WORD_SHIELD_RANK_1))
+        player->learnSpell(SPELL_PRIEST_POWER_WORD_SHIELD_RANK_1);
+}
+
+void EnsureDruidInstantLevelOneSpells(Player* player)
+{
+    if (!player || player->getClass() != CLASS_DRUID || player->GetLevel() < 1)
+        return;
+
+    if (!player->HasSpell(SPELL_DRUID_CAT_FORM_RANK_1))
+        player->learnSpell(SPELL_DRUID_CAT_FORM_RANK_1);
+
+    if (!player->HasSpell(SPELL_DRUID_CLAW_RANK_1))
+        player->learnSpell(SPELL_DRUID_CLAW_RANK_1);
+
+    if (!player->HasSpell(SPELL_DRUID_RIP_RANK_1))
+        player->learnSpell(SPELL_DRUID_RIP_RANK_1);
+
+    if (!player->HasSpell(SPELL_DRUID_SWIPE_CAT_RANK_1))
+        player->learnSpell(SPELL_DRUID_SWIPE_CAT_RANK_1);
 }
 
 void AddSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint64 xpGain)
@@ -380,6 +463,9 @@ public:
             return;
 
         SpellMastery::EnsureShamanInstantLevelOneSpells(player);
+        SpellMastery::EnsurePaladinInstantLevelOneSpells(player);
+        SpellMastery::EnsurePriestInstantLevelOneSpells(player);
+        SpellMastery::EnsureDruidInstantLevelOneSpells(player);
         SpellMastery::EnforceAllManagedSpellBaseRanks(player);
 
         for (SpellMastery::ManagedSpellConfig const& config : SpellMastery::ManagedSpellConfigs)
@@ -395,6 +481,9 @@ public:
             return;
 
         SpellMastery::EnsureShamanInstantLevelOneSpells(player);
+        SpellMastery::EnsurePaladinInstantLevelOneSpells(player);
+        SpellMastery::EnsurePriestInstantLevelOneSpells(player);
+        SpellMastery::EnsureDruidInstantLevelOneSpells(player);
         SpellMastery::EnforceAllManagedSpellBaseRanks(player);
     }
 
@@ -438,4 +527,6 @@ void AddSC_spell_mastery_fireball()
     AddSC_spell_mastery_warlock();
     AddSC_spell_mastery_rogue();
     AddSC_spell_mastery_shaman();
+    AddSC_spell_mastery_paladin();
+    AddSC_spell_mastery_priest();
 }

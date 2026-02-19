@@ -69,8 +69,6 @@ uint32 constexpr CHAIN_LIGHTNING_GOLD_DEBUFF_TTL_MS = 15000;
 uint32 constexpr CHAIN_LIGHTNING_BASE_TOTAL_TARGETS = 3;
 uint32 constexpr CHAIN_LIGHTNING_MAX_TOTAL_TARGETS = 12;
 float constexpr CHAIN_LIGHTNING_BASE_JUMP_MULTIPLIER = 0.70f;
-uint32 constexpr EARLY_ACCESS_LEVEL_OFFSET = 4;
-float constexpr EARLY_ACCESS_MIN_SCALE = 0.05f;
 
 std::unordered_map<ChainLightningGoldDebuffKey, ChainLightningGoldDebuffState, ChainLightningGoldDebuffKeyHash> ChainLightningGoldDebuffStates;
 
@@ -101,21 +99,6 @@ ChainLightningMasteryEffects BuildChainLightningMasteryEffects(SpellMastery::Spe
 
     effects.HasDiamondInstantReset = diamondLevel > 0;
     return effects;
-}
-
-float ComputeEarlyAccessSpellScale(Player* caster, SpellInfo const* spellInfo)
-{
-    if (!caster || !spellInfo)
-        return 1.0f;
-
-    uint32 const playerLevel = std::max<uint32>(1, caster->GetLevel());
-    uint32 const naturalLevel = std::max<uint32>(spellInfo->SpellLevel, spellInfo->BaseLevel);
-    if (naturalLevel <= 1 || playerLevel >= naturalLevel)
-        return 1.0f;
-
-    float const adjustedPlayer = float(playerLevel + EARLY_ACCESS_LEVEL_OFFSET);
-    float const adjustedNatural = float(naturalLevel + EARLY_ACCESS_LEVEL_OFFSET);
-    return std::clamp(adjustedPlayer / adjustedNatural, EARLY_ACCESS_MIN_SCALE, 1.0f);
 }
 
 uint8 GetActiveGoldDebuffStacks(Player* caster, Unit* target)
@@ -192,8 +175,7 @@ class spell_sha_chain_lightning_mastery : public SpellScript
         if (hitDamage <= 0)
             return;
 
-        float const earlyScale = ComputeEarlyAccessSpellScale(_playerCaster, GetSpellInfo());
-        hitDamage = std::max<int32>(1, int32(std::lround(float(hitDamage) * earlyScale)));
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
 
         uint8 const jumpIndex = _processedTargets++;
 
@@ -321,8 +303,7 @@ class spell_sha_lava_burst_mastery : public SpellScript
         if (hitDamage <= 0)
             return;
 
-        float const earlyScale = ComputeEarlyAccessSpellScale(_playerCaster, GetSpellInfo());
-        hitDamage = std::max<int32>(1, int32(std::lround(float(hitDamage) * earlyScale)));
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
         SetHitDamage(hitDamage);
 
         if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, LAVA_BURST_XP_GUARD_MS))

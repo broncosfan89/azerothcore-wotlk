@@ -173,6 +173,8 @@ class spell_war_thunder_clap_mastery : public SpellScript
         if (hitDamage <= 0)
             return;
 
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+
         if (_effects.DamageBonusPct > 0.0f)
         {
             int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.DamageBonusPct / 100.0f))));
