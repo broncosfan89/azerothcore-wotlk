@@ -44,6 +44,26 @@ struct PowerWordShieldMasteryEffects
 
 uint32 constexpr PWS_XP_GUARD_MS = 250;
 
+void ApplyBronzeWeakenedSoulReduction(Unit* target, Player* caster, PowerWordShieldMasteryEffects const& effects)
+{
+    if (!target || !caster || effects.BronzeWeakenedSoulReductionPct <= 0.0f || !target->IsPlayer())
+        return;
+
+    Aura* weakenedSoul = target->GetAura(SpellMastery::SPELL_PRIEST_WEAKENED_SOUL, caster->GetGUID());
+    if (!weakenedSoul)
+        weakenedSoul = target->GetAura(SpellMastery::SPELL_PRIEST_WEAKENED_SOUL);
+
+    if (!weakenedSoul)
+        return;
+
+    int32 const baseDuration = weakenedSoul->GetMaxDuration();
+    int32 const reducedDuration = int32(std::lround(float(baseDuration) * (1.0f - (effects.BronzeWeakenedSoulReductionPct / 100.0f))));
+    int32 const clampedDuration = std::max<int32>(1000, reducedDuration);
+    weakenedSoul->SetMaxDuration(clampedDuration);
+    if (weakenedSoul->GetDuration() > clampedDuration)
+        weakenedSoul->SetDuration(clampedDuration);
+}
+
 PowerWordShieldMasteryEffects BuildPowerWordShieldMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
     PowerWordShieldMasteryEffects effects;
@@ -134,18 +154,7 @@ class spell_pri_power_word_shield_mastery : public SpellScript
             _xpAwarded = true;
         }
 
-        if (_effects.BronzeWeakenedSoulReductionPct > 0.0f && target->IsPlayer())
-        {
-            if (Aura* weakenedSoul = target->GetAura(SpellMastery::SPELL_PRIEST_WEAKENED_SOUL, _playerCaster->GetGUID()))
-            {
-                int32 const baseDuration = weakenedSoul->GetMaxDuration();
-                int32 const reducedDuration = int32(std::lround(float(baseDuration) * (1.0f - (_effects.BronzeWeakenedSoulReductionPct / 100.0f))));
-                int32 const clampedDuration = std::max<int32>(1000, reducedDuration);
-                weakenedSoul->SetMaxDuration(clampedDuration);
-                if (weakenedSoul->GetDuration() > clampedDuration)
-                    weakenedSoul->SetDuration(clampedDuration);
-            }
-        }
+        ApplyBronzeWeakenedSoulReduction(target, _playerCaster, _effects);
 
         if (_effects.SilverHotPctPerTick > 0.0f)
         {
@@ -205,6 +214,7 @@ class spell_pri_power_word_shield_mastery_aura : public AuraScript
             return;
 
         _initialShieldAmount = std::max<int32>(_initialShieldAmount, aurEff->GetAmount());
+        ApplyBronzeWeakenedSoulReduction(GetTarget(), _playerCaster, _effects);
     }
 
     void HandleCalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
@@ -269,8 +279,49 @@ private:
     uint32 _absorbedTotal = 0;
 };
 
+class spell_pri_weakened_soul_mastery : public AuraScript
+{
+    PrepareAuraScript(spell_pri_weakened_soul_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        Unit* owner = GetUnitOwner();
+        if (!owner || !owner->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigByBaseSpell(SpellMastery::SPELL_PRIEST_POWER_WORD_SHIELD_RANK_1);
+        if (!_config)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildPowerWordShieldMasteryEffects(_progress, *_config);
+        return true;
+    }
+
+    void HandleApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        ApplyBronzeWeakenedSoulReduction(GetUnitOwner(), _playerCaster, _effects);
+    }
+
+    void Register() override
+    {
+        AfterEffectApply += AuraEffectApplyFn(spell_pri_weakened_soul_mastery::HandleApply, EFFECT_ALL, SPELL_AURA_ANY, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    PowerWordShieldMasteryEffects _effects;
+};
+
 void AddSC_spell_mastery_priest()
 {
     RegisterSpellScript(spell_pri_power_word_shield_mastery);
     RegisterSpellScript(spell_pri_power_word_shield_mastery_aura);
+    RegisterSpellScript(spell_pri_weakened_soul_mastery);
 }
