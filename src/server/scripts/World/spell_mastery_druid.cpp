@@ -163,7 +163,7 @@ uint32 constexpr REGROWTH_XP_GUARD_MS = 350;
 uint32 constexpr SWIPE_CAT_XP_GUARD_MS = 250;
 uint32 constexpr RIP_XP_GUARD_MS = 250;
 int32 constexpr RIP_BASE_TICK_INTERVAL_MS = 2000;
-int32 constexpr RIP_MIN_TICK_INTERVAL_MS = 800;
+int32 constexpr RIP_MIN_TICK_INTERVAL_MS = 500;
 
 std::unordered_map<RejuvenationStackKey, RejuvenationStackState, RejuvenationStackKeyHash> RejuvenationStackStates;
 std::unordered_map<RegrowthStackKey, RegrowthStackState, RegrowthStackKeyHash> RegrowthStackStates;
@@ -276,7 +276,7 @@ SwipeCatMasteryEffects BuildSwipeCatMasteryEffects(SpellMastery::SpellMasteryPro
         effects.SilverEnergyRefund = 1 + int32(silverLevel);
 
     if (goldLevel > 0)
-        effects.GoldBleedPct = 10.0f + (float(goldLevel - 1) * (20.0f / 9.0f));
+        effects.GoldBleedPct = 30.0f + (float(goldLevel - 1) * (90.0f / 9.0f));
 
     if (diamondLevel > 0)
         effects.DiamondHealPct = 8.0f + (float(diamondLevel - 1) * (22.0f / 9.0f));
@@ -296,10 +296,10 @@ RipMasteryEffects BuildRipMasteryEffects(SpellMastery::SpellMasteryProgress cons
     uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     if (totalMasteryLevels > 0)
-        effects.IronDamageBonusPct = float(totalMasteryLevels) * 10.0f;
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 25.0f;
 
     if (bronzeLevel > 0)
-        effects.BronzeTickIntervalMs = std::max<int32>(RIP_MIN_TICK_INTERVAL_MS, RIP_BASE_TICK_INTERVAL_MS - (int32(bronzeLevel) * 100));
+        effects.BronzeTickIntervalMs = RIP_MIN_TICK_INTERVAL_MS;
 
     if (silverLevel > 0)
         effects.SilverDamageTakenPct = float(silverLevel) * 2.0f;
@@ -1071,6 +1071,15 @@ class spell_dru_rip_mastery_aura : public AuraScript
         }
     }
 
+    void CalculatePeriodicTiming(AuraEffect const* /*aurEff*/, bool& isPeriodic, int32& amplitude)
+    {
+        if (_effects.BronzeTickIntervalMs <= 0)
+            return;
+
+        isPeriodic = true;
+        amplitude = _effects.BronzeTickIntervalMs;
+    }
+
     void HandlePeriodicUpdate(AuraEffect* aurEff)
     {
         if (!aurEff || _effects.BronzeTickIntervalMs <= 0)
@@ -1082,6 +1091,18 @@ class spell_dru_rip_mastery_aura : public AuraScript
 
     void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
+        if (_effects.BronzeTickIntervalMs > 0)
+        {
+            if (Aura* aura = GetAura())
+            {
+                if (AuraEffect* periodic = aura->GetEffect(EFFECT_0))
+                {
+                    if (periodic->GetPeriodicTimer() > _effects.BronzeTickIntervalMs)
+                        periodic->SetPeriodicTimer(_effects.BronzeTickIntervalMs);
+                }
+            }
+        }
+
         if (!_playerCaster || _effects.SilverDamageTakenPct <= 0.0f)
             return;
 
@@ -1118,10 +1139,11 @@ class spell_dru_rip_mastery_aura : public AuraScript
 
     void Register() override
     {
-        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dru_rip_mastery_aura::CalculatePeriodicDamageAmount, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
-        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_dru_rip_mastery_aura::HandlePeriodicUpdate, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
-        OnEffectApply += AuraEffectApplyFn(spell_dru_rip_mastery_aura::HandleEffectApply, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
-        OnEffectRemove += AuraEffectRemoveFn(spell_dru_rip_mastery_aura::HandleEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_dru_rip_mastery_aura::CalculatePeriodicDamageAmount, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+        DoEffectCalcPeriodic += AuraEffectCalcPeriodicFn(spell_dru_rip_mastery_aura::CalculatePeriodicTiming, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_dru_rip_mastery_aura::HandlePeriodicUpdate, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectApply += AuraEffectApplyFn(spell_dru_rip_mastery_aura::HandleEffectApply, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+        OnEffectRemove += AuraEffectRemoveFn(spell_dru_rip_mastery_aura::HandleEffectRemove, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
     }
 
 private:
