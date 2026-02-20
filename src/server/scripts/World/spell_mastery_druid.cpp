@@ -264,12 +264,13 @@ SwipeCatMasteryEffects BuildSwipeCatMasteryEffects(SpellMastery::SpellMasteryPro
     uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
     uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     if (ironLevel > 0)
         effects.IronEnergyCostReduction = int32(ironLevel) * 2;
 
-    if (bronzeLevel > 0)
-        effects.BronzeDamageBonusPct = float(bronzeLevel) * 12.0f;
+    if (totalMasteryLevels > 0)
+        effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 10.0f;
 
     if (silverLevel > 0)
         effects.SilverEnergyRefund = 1 + int32(silverLevel);
@@ -292,9 +293,10 @@ RipMasteryEffects BuildRipMasteryEffects(SpellMastery::SpellMasteryProgress cons
     uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
     uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
-    if (ironLevel > 0)
-        effects.IronDamageBonusPct = float(ironLevel) * 10.0f;
+    if (totalMasteryLevels > 0)
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 10.0f;
 
     if (bronzeLevel > 0)
         effects.BronzeTickIntervalMs = std::max<int32>(RIP_MIN_TICK_INTERVAL_MS, RIP_BASE_TICK_INTERVAL_MS - (int32(bronzeLevel) * 100));

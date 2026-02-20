@@ -130,9 +130,10 @@ ChainLightningMasteryEffects BuildChainLightningMasteryEffects(SpellMastery::Spe
     uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
     uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
-    if (ironLevel > 0)
-        effects.IronDamageBonusPct = float(ironLevel) * 15.0f;
+    if (totalMasteryLevels > 0)
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 8.0f;
 
     if (bronzeLevel > 0)
         effects.BronzeJumpReductionPct = std::max(0.0f, 30.0f * (1.0f - (float(bronzeLevel) / 10.0f)));
@@ -159,12 +160,13 @@ LavaBurstMasteryEffects BuildLavaBurstMasteryEffects(SpellMastery::SpellMasteryP
     uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
     uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     if (ironLevel > 0)
         effects.IronCooldownReductionMs = int32(std::lround(float(LAVA_BURST_MAX_COOLDOWN_REDUCTION_MS) * (float(ironLevel) / 10.0f)));
 
-    if (bronzeLevel > 0)
-        effects.BronzeDamageBonusPct = float(bronzeLevel) * 12.0f;
+    if (totalMasteryLevels > 0)
+        effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 3.0f;
 
     if (silverLevel > 0)
         effects.SilverFireDamageTakenPct = float(silverLevel) * 2.5f;

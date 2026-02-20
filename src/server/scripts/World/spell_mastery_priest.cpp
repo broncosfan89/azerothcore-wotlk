@@ -17,11 +17,13 @@
 
 #include "spell_mastery_core.h"
 
+#include "Chat.h"
 #include "Cell.h"
 #include "CellImpl.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Player.h"
+#include "SpellMgr.h"
 #include "SpellAuras.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
@@ -43,6 +45,21 @@ struct PowerWordShieldMasteryEffects
 };
 
 uint32 constexpr PWS_XP_GUARD_MS = 250;
+
+uint32 GetHighestKnownSpellInChain(Player* player, uint32 firstRankSpellId)
+{
+    if (!player || !firstRankSpellId)
+        return firstRankSpellId;
+
+    uint32 highestKnownSpellId = firstRankSpellId;
+    for (uint32 spellId = firstRankSpellId; spellId; spellId = sSpellMgr->GetNextSpellInChain(spellId))
+    {
+        if (player->HasSpell(spellId))
+            highestKnownSpellId = spellId;
+    }
+
+    return highestKnownSpellId;
+}
 
 void ApplyBronzeWeakenedSoulReduction(Unit* target, Player* caster, PowerWordShieldMasteryEffects const& effects)
 {
@@ -73,15 +90,16 @@ PowerWordShieldMasteryEffects BuildPowerWordShieldMasteryEffects(SpellMastery::S
     uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
     uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
-    if (ironLevel > 0)
-        effects.IronShieldBonusPct = float(ironLevel) * 8.0f;
+    if (totalMasteryLevels > 0)
+        effects.IronShieldBonusPct = float(totalMasteryLevels) * 70.0f;
 
     if (bronzeLevel > 0)
         effects.BronzeWeakenedSoulReductionPct = std::min<float>(60.0f, float(bronzeLevel) * 6.0f);
 
     if (silverLevel > 0)
-        effects.SilverHotPctPerTick = float(silverLevel) * 1.5f;
+        effects.SilverHotPctPerTick = float(silverLevel) * 5.0f;
 
     if (goldLevel > 0)
         effects.GoldReflectPct = 5.0f + (float(goldLevel) * 3.0f);
@@ -138,6 +156,7 @@ class spell_pri_power_word_shield_mastery : public SpellScript
 
         _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
         _effects = BuildPowerWordShieldMasteryEffects(_progress, *_config);
+        _renewSpellId = GetHighestKnownSpellInChain(_playerCaster, SpellMastery::SPELL_PRIEST_RENEW_RANK_1);
         _isTriggeredCast = GetSpell()->IsTriggered();
         return true;
     }
@@ -164,7 +183,7 @@ class spell_pri_power_word_shield_mastery : public SpellScript
                 {
                     int32 const shieldAmount = std::max<int32>(1, absorbEff->GetAmount());
                     int32 const hotPerTick = std::max<int32>(1, int32(std::lround((float(shieldAmount) * _effects.SilverHotPctPerTick) / 100.0f)));
-                    _playerCaster->CastCustomSpell(target, SpellMastery::SPELL_PRIEST_RENEW_RANK_1, &hotPerTick, nullptr, nullptr, true);
+                    _playerCaster->CastCustomSpell(target, _renewSpellId, &hotPerTick, nullptr, nullptr, true);
                 }
             }
         }
@@ -180,6 +199,7 @@ private:
     SpellMastery::ManagedSpellConfig const* _config = nullptr;
     SpellMastery::SpellMasteryProgress _progress;
     PowerWordShieldMasteryEffects _effects;
+    uint32 _renewSpellId = SpellMastery::SPELL_PRIEST_RENEW_RANK_1;
     bool _isTriggeredCast = false;
     bool _xpAwarded = false;
 };
@@ -215,6 +235,15 @@ class spell_pri_power_word_shield_mastery_aura : public AuraScript
 
         _initialShieldAmount = std::max<int32>(_initialShieldAmount, aurEff->GetAmount());
         ApplyBronzeWeakenedSoulReduction(GetTarget(), _playerCaster, _effects);
+
+        if (_playerCaster && _playerCaster->GetSession() && SpellMastery::IsSpellMasteryFeedEnabled())
+        {
+            ChatHandler(_playerCaster->GetSession()).PSendSysMessage(
+                "[SM PWS] absorb={} ironBonus={:.1f}% silverHotPerTick={:.1f}%",
+                _initialShieldAmount,
+                _effects.IronShieldBonusPct,
+                _effects.SilverHotPctPerTick);
+        }
     }
 
     void HandleCalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)

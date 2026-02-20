@@ -51,9 +51,10 @@ HauntMasteryEffects BuildHauntMasteryEffects(SpellMastery::SpellMasteryProgress 
     uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
     uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     // Iron: increase direct Haunt impact damage.
-    effects.IronDamageBonusPct = float(ironLevel) * 10.0f;
+    effects.IronDamageBonusPct = float(totalMasteryLevels) * 10.0f;
 
     // Bronze: increase Haunt periodic damage amplification from 20% to 100%.
     if (bronzeLevel > 0)

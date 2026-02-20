@@ -74,9 +74,10 @@ ConsecrationMasteryEffects BuildConsecrationMasteryEffects(SpellMastery::SpellMa
     uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
     uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
-    if (ironLevel > 0)
-        effects.IronDamageBonusPct = float(ironLevel) * 8.0f;
+    if (totalMasteryLevels > 0)
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 8.0f;
 
     if (bronzeLevel > 0)
         effects.BronzeRadiusMultiplier += float(bronzeLevel) * 0.05f;

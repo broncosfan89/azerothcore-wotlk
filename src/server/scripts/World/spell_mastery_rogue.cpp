@@ -58,13 +58,14 @@ KillingSpreeMasteryEffects BuildKillingSpreeMasteryEffects(SpellMastery::SpellMa
     uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
     uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     // Iron: increase total attacks from 5 up to 15.
     if (ironLevel > 0)
         effects.IronAttackCount = uint8(std::min<uint32>(15, KILLING_SPREE_BASE_ATTACK_COUNT + ironLevel));
 
     // Bronze: increase strike damage.
-    effects.BronzeDamageBonusPct = float(bronzeLevel) * 8.0f;
+    effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 8.0f;
 
     // Silver: reduce cooldown to 45 seconds.
     if (silverLevel > 0)
