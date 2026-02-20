@@ -34,6 +34,8 @@
 
 namespace
 {
+uint32 constexpr SPELL_PRIEST_FLASH_HEAL_RANK_1 = 2061;
+
 struct PowerWordShieldMasteryEffects
 {
     float IronShieldBonusPct = 0.0f;
@@ -102,7 +104,7 @@ PowerWordShieldMasteryEffects BuildPowerWordShieldMasteryEffects(SpellMastery::S
         effects.SilverHotPctPerTick = float(silverLevel) * 5.0f;
 
     if (goldLevel > 0)
-        effects.GoldReflectPct = 5.0f + (float(goldLevel) * 3.0f);
+        effects.GoldReflectPct = 15.0f + (float(goldLevel) * 6.0f);
 
     if (diamondLevel > 0)
     {
@@ -113,16 +115,17 @@ PowerWordShieldMasteryEffects BuildPowerWordShieldMasteryEffects(SpellMastery::S
     return effects;
 }
 
-void HealNearbyFriendlyPlayers(Unit* center, int32 healAmount, float radius)
+uint32 HealNearbyFriendlyPlayers(Player* caster, Unit* center, int32 healAmount, float radius, SpellInfo const* spellInfo)
 {
     if (!center || healAmount <= 0 || radius <= 0.0f)
-        return;
+        return 0;
 
     std::list<Unit*> units;
     Acore::AnyFriendlyUnitInObjectRangeCheck unitCheck(center, center, radius);
     Acore::UnitListSearcher<Acore::AnyFriendlyUnitInObjectRangeCheck> searcher(center, units, unitCheck);
     Cell::VisitObjects(center, searcher, radius);
 
+    uint32 healedTargets = 0;
     for (Unit* unit : units)
     {
         if (!unit || !unit->IsAlive() || !unit->IsPlayer())
@@ -131,8 +134,18 @@ void HealNearbyFriendlyPlayers(Unit* center, int32 healAmount, float radius)
         if (!center->IsFriendlyTo(unit))
             continue;
 
-        unit->ModifyHealth(healAmount);
+        if (caster && spellInfo)
+        {
+            HealInfo healInfo(caster, unit, uint32(std::max<int32>(1, healAmount)), spellInfo, spellInfo->GetSchoolMask());
+            caster->HealBySpell(healInfo);
+        }
+        else
+            unit->ModifyHealth(healAmount);
+
+        ++healedTargets;
     }
+
+    return healedTargets;
 }
 }
 
@@ -220,6 +233,7 @@ class spell_pri_power_word_shield_mastery_aura : public AuraScript
 
         _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
         _effects = BuildPowerWordShieldMasteryEffects(_progress, *_config);
+        _endHealSpellId = GetHighestKnownSpellInChain(_playerCaster, SPELL_PRIEST_FLASH_HEAL_RANK_1);
         return true;
     }
 
@@ -280,15 +294,38 @@ class spell_pri_power_word_shield_mastery_aura : public AuraScript
     void HandleRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         Unit* target = GetTarget();
-        if (!target || !target->IsAlive() || _effects.DiamondEndHealPct <= 0.0f || _effects.DiamondEndHealRadius <= 0.0f)
+        if (!target || _effects.DiamondEndHealPct <= 0.0f || _effects.DiamondEndHealRadius <= 0.0f)
             return;
 
         int32 const shieldPool = std::max<int32>(_initialShieldAmount, int32(_absorbedTotal));
-        if (shieldPool <= 0)
+        if (_playerCaster && _playerCaster->GetSession() && SpellMastery::IsSpellMasteryFeedEnabled())
+        {
+            ChatHandler(_playerCaster->GetSession()).PSendSysMessage(
+                "[SM PWS] remove pool={} absorbed={} initial={} alive={}",
+                shieldPool,
+                _absorbedTotal,
+                _initialShieldAmount,
+                target->IsAlive() ? 1 : 0);
+        }
+
+        if (!target->IsAlive() || shieldPool <= 0)
             return;
 
         int32 const healAmount = std::max<int32>(1, int32(std::lround((float(shieldPool) * _effects.DiamondEndHealPct) / 100.0f)));
-        HealNearbyFriendlyPlayers(target, healAmount, _effects.DiamondEndHealRadius);
+        SpellInfo const* endHealSpellInfo = sSpellMgr->GetSpellInfo(_endHealSpellId);
+        if (!endHealSpellInfo)
+            endHealSpellInfo = GetSpellInfo();
+        uint32 const healedTargets = HealNearbyFriendlyPlayers(_playerCaster, target, healAmount, _effects.DiamondEndHealRadius, endHealSpellInfo);
+
+        if (_playerCaster && _playerCaster->GetSession() && SpellMastery::IsSpellMasteryFeedEnabled())
+        {
+            ChatHandler(_playerCaster->GetSession()).PSendSysMessage(
+                "[SM PWS] end-heal pool={} heal={} radius={:.1f} targets={}",
+                shieldPool,
+                healAmount,
+                _effects.DiamondEndHealRadius,
+                healedTargets);
+        }
     }
 
     void Register() override
@@ -296,7 +333,7 @@ class spell_pri_power_word_shield_mastery_aura : public AuraScript
         OnEffectApply += AuraEffectApplyFn(spell_pri_power_word_shield_mastery_aura::HandleApply, EFFECT_0, SPELL_AURA_SCHOOL_ABSORB, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
         DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_pri_power_word_shield_mastery_aura::HandleCalculateAmount, EFFECT_0, SPELL_AURA_SCHOOL_ABSORB);
         AfterEffectAbsorb += AuraEffectAbsorbFn(spell_pri_power_word_shield_mastery_aura::HandleAfterAbsorb, EFFECT_0);
-        AfterEffectRemove += AuraEffectRemoveFn(spell_pri_power_word_shield_mastery_aura::HandleRemove, EFFECT_0, SPELL_AURA_SCHOOL_ABSORB, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+        OnEffectRemove += AuraEffectRemoveFn(spell_pri_power_word_shield_mastery_aura::HandleRemove, EFFECT_0, SPELL_AURA_SCHOOL_ABSORB, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
     }
 
 private:
@@ -304,6 +341,7 @@ private:
     SpellMastery::ManagedSpellConfig const* _config = nullptr;
     SpellMastery::SpellMasteryProgress _progress;
     PowerWordShieldMasteryEffects _effects;
+    uint32 _endHealSpellId = SPELL_PRIEST_FLASH_HEAL_RANK_1;
     int32 _initialShieldAmount = 0;
     uint32 _absorbedTotal = 0;
 };

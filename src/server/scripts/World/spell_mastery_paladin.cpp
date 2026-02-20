@@ -18,10 +18,12 @@
 #include "spell_mastery_core.h"
 
 #include "AllSpellScript.h"
+#include "Chat.h"
 #include "GameTime.h"
 #include "Log.h"
 #include "Player.h"
 #include "Spell.h"
+#include "SpellAuras.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 
@@ -92,7 +94,7 @@ ConsecrationMasteryEffects BuildConsecrationMasteryEffects(SpellMastery::SpellMa
     }
 
     if (diamondLevel > 0)
-        effects.DiamondHealPctOfHitDamage = 10.0f + (float(diamondLevel) * 5.0f);
+        effects.DiamondHealPctOfHitDamage = 300.0f + (float(diamondLevel - 1) * (600.0f / 9.0f));
 
     return effects;
 }
@@ -261,35 +263,10 @@ class spell_pal_consecration_mastery : public SpellScript
         if (!target || _playerCaster->IsFriendlyTo(target))
             return;
 
-        int32 hitDamage = GetHitDamage();
-        if (hitDamage <= 0)
-            return;
-
-        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
-
-        if (_effects.IronDamageBonusPct > 0.0f)
-        {
-            int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.IronDamageBonusPct / 100.0f))));
-            hitDamage = std::max(hitDamage, scaledDamage);
-            SetHitDamage(hitDamage);
-        }
-
         if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, CONSECRATION_XP_GUARD_MS))
         {
             SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
             _xpAwarded = true;
-        }
-
-        if (_effects.SilverEnemyDamageReductionPct > 0.0f)
-            ApplyOrRefreshSilverState(target, _effects.SilverEnemyDamageReductionPct);
-
-        if (_effects.GoldMaxStacks > 0 && _effects.GoldDamageBonusPctPerStack > 0.0f)
-            ApplyOrRefreshGoldState(_playerCaster, _effects.GoldMaxStacks, _effects.GoldDamageBonusPctPerStack);
-
-        if (_effects.DiamondHealPctOfHitDamage > 0.0f && _playerCaster->IsAlive())
-        {
-            int32 const healAmount = std::max<int32>(1, int32(std::lround((float(hitDamage) * _effects.DiamondHealPctOfHitDamage) / 100.0f)));
-            _playerCaster->ModifyHealth(healAmount);
         }
     }
 
@@ -318,6 +295,88 @@ private:
     ConsecrationMasteryEffects _effects;
     bool _isTriggeredCast = false;
     bool _xpAwarded = false;
+};
+
+class spell_pal_consecration_mastery_aura : public AuraScript
+{
+    PrepareAuraScript(spell_pal_consecration_mastery_aura);
+
+    bool Load() override
+    {
+        Unit* caster = GetCaster();
+        if (!caster || !caster->IsPlayer())
+            return false;
+
+        _playerCaster = caster->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_PALADIN_CONSECRATION_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildConsecrationMasteryEffects(_progress, *_config);
+        return true;
+    }
+
+    void CalculatePeriodicDamageAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    {
+        if (!_playerCaster || amount <= 0)
+            return;
+
+        amount = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), amount);
+        if (_effects.IronDamageBonusPct <= 0.0f)
+            return;
+
+        int32 const scaledAmount = int32(std::lround(float(amount) * (1.0f + (_effects.IronDamageBonusPct / 100.0f))));
+        amount = std::max(amount, scaledAmount);
+    }
+
+    void HandlePeriodicDamage(AuraEffect const* aurEff)
+    {
+        if (!_playerCaster || !aurEff)
+            return;
+
+        Unit* target = GetTarget();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        if (SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, CONSECRATION_XP_GUARD_MS))
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+
+        if (_effects.SilverEnemyDamageReductionPct > 0.0f)
+            ApplyOrRefreshSilverState(target, _effects.SilverEnemyDamageReductionPct);
+
+        if (_effects.GoldMaxStacks > 0 && _effects.GoldDamageBonusPctPerStack > 0.0f)
+            ApplyOrRefreshGoldState(_playerCaster, _effects.GoldMaxStacks, _effects.GoldDamageBonusPctPerStack);
+
+        if (_effects.DiamondHealPctOfHitDamage <= 0.0f || !_playerCaster->IsAlive())
+            return;
+
+        int32 const tickDamage = std::max<int32>(1, aurEff->GetAmount());
+        int32 const healAmount = std::max<int32>(1, int32(std::lround((float(tickDamage) * _effects.DiamondHealPctOfHitDamage) / 100.0f)));
+        HealInfo healInfo(_playerCaster, _playerCaster, uint32(healAmount), GetSpellInfo(), GetSpellInfo()->GetSchoolMask());
+        _playerCaster->HealBySpell(healInfo);
+
+        if (_playerCaster->GetSession() && SpellMastery::IsSpellMasteryFeedEnabled())
+        {
+            ChatHandler(_playerCaster->GetSession()).PSendSysMessage(
+                "[SM Cons] tick={} heal={} pct={:.1f}%",
+                tickDamage,
+                healAmount,
+                _effects.DiamondHealPctOfHitDamage);
+        }
+    }
+
+    void Register() override
+    {
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_pal_consecration_mastery_aura::CalculatePeriodicDamageAmount, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_pal_consecration_mastery_aura::HandlePeriodicDamage, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    ConsecrationMasteryEffects _effects;
 };
 
 class spell_mastery_prepare_paladin_spell_script : public AllSpellScript
@@ -379,5 +438,5 @@ public:
 void AddSC_spell_mastery_paladin()
 {
     new spell_mastery_prepare_paladin_spell_script();
-    RegisterSpellScript(spell_pal_consecration_mastery);
+    RegisterSpellAndAuraScriptPair(spell_pal_consecration_mastery, spell_pal_consecration_mastery_aura);
 }
