@@ -19,6 +19,7 @@
 
 #include "AllSpellScript.h"
 #include "GameTime.h"
+#include "Log.h"
 #include "Player.h"
 #include "Spell.h"
 #include "SpellScript.h"
@@ -116,7 +117,7 @@ bool IsDamageEffect(SpellEffectInfo const& effectInfo)
     return effectInfo.IsAura(SPELL_AURA_PERIODIC_DAMAGE) || effectInfo.IsAura(SPELL_AURA_PERIODIC_LEECH);
 }
 
-void ApplySpellDamagePercentModifier(Spell* spell, Unit* caster, SpellInfo const* spellInfo, float pct)
+void ApplySpellDamagePercentModifier(Spell* spell, Unit* caster, SpellInfo const* spellInfo, float pct, float silverReductionPct)
 {
     if (!spell || !caster || !spellInfo || std::fabs(pct) < 0.01f)
         return;
@@ -140,6 +141,14 @@ void ApplySpellDamagePercentModifier(Spell* spell, Unit* caster, SpellInfo const
             scaledValue = std::min<int32>(-1, scaledValue);
 
         spell->SetSpellValue(SpellValueMod(SPELLVALUE_BASE_POINT0 + i), scaledValue);
+
+        if (silverReductionPct > 0.0f)
+        {
+            LOG_INFO(
+                "spells",
+                "SpellMastery Consecration Silver: caster={} spell={} effect={} base={} modified={} totalPct={:.2f} silverPct={:.2f}",
+                caster->GetName(), spellInfo->Id, uint32(i), baseValue, scaledValue, pct, silverReductionPct);
+        }
     }
 }
 
@@ -323,6 +332,7 @@ public:
             return;
 
         float outgoingDamagePct = 0.0f;
+        float silverReductionPct = 0.0f;
 
         if (caster->IsPlayer() && caster->ToPlayer()->getClass() == CLASS_PALADIN)
         {
@@ -342,8 +352,9 @@ public:
             }
         }
 
-        outgoingDamagePct -= GetSilverReductionPct(caster);
-        ApplySpellDamagePercentModifier(spell, caster, spellInfo, outgoingDamagePct);
+        silverReductionPct = GetSilverReductionPct(caster);
+        outgoingDamagePct -= silverReductionPct;
+        ApplySpellDamagePercentModifier(spell, caster, spellInfo, outgoingDamagePct, silverReductionPct);
     }
 
     void OnSpellCast(Spell* spell, Unit* caster, SpellInfo const* spellInfo, bool /*skipCheck*/) override

@@ -112,6 +112,7 @@ uint32 constexpr LAVA_BURST_SILVER_DEBUFF_TTL_MS = 15000;
 int32 constexpr LAVA_BURST_MAX_COOLDOWN_REDUCTION_MS = 6000;
 float constexpr LAVA_BURST_GOLD_SPREAD_RADIUS = 20.0f;
 float constexpr LAVA_BURST_DIAMOND_SEARCH_RADIUS = 40.0f;
+float constexpr CHAIN_LIGHTNING_SILVER_EXTRA_TARGET_RADIUS = 12.5f;
 uint32 constexpr CHAIN_LIGHTNING_BASE_TOTAL_TARGETS = 3;
 uint32 constexpr CHAIN_LIGHTNING_MAX_TOTAL_TARGETS = 12;
 float constexpr CHAIN_LIGHTNING_BASE_JUMP_MULTIPLIER = 0.70f;
@@ -460,9 +461,59 @@ class spell_sha_chain_lightning_mastery : public SpellScript
         state.ExpiresAtMs = nowMs + CHAIN_LIGHTNING_GOLD_DEBUFF_TTL_MS;
     }
 
+    void ExpandSilverChainTargets(std::list<WorldObject*>& targets)
+    {
+        if (_effects.SilverExtraTargets == 0 || !_playerCaster)
+            return;
+
+        Unit* primaryTarget = GetExplTargetUnit();
+        if (!primaryTarget)
+            return;
+
+        uint32 const totalTargets = std::min<uint32>(CHAIN_LIGHTNING_MAX_TOTAL_TARGETS, CHAIN_LIGHTNING_BASE_TOTAL_TARGETS + _effects.SilverExtraTargets);
+        if (totalTargets <= 1)
+            return;
+
+        uint32 const desiredAdditionalTargets = totalTargets - 1;
+        if (targets.size() >= desiredAdditionalTargets)
+            return;
+
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(primaryTarget, _playerCaster, CHAIN_LIGHTNING_SILVER_EXTRA_TARGET_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(primaryTarget, nearbyUnits, check);
+        Cell::VisitObjects(primaryTarget, searcher, CHAIN_LIGHTNING_SILVER_EXTRA_TARGET_RADIUS);
+
+        for (Unit* candidate : nearbyUnits)
+        {
+            if (!candidate || candidate == primaryTarget || !_playerCaster->IsValidAttackTarget(candidate))
+                continue;
+
+            if (!primaryTarget->IsWithinLOSInMap(candidate, VMAP::ModelIgnoreFlags::M2))
+                continue;
+
+            bool alreadySelected = false;
+            for (WorldObject* existing : targets)
+            {
+                if (existing && existing->GetGUID() == candidate->GetGUID())
+                {
+                    alreadySelected = true;
+                    break;
+                }
+            }
+
+            if (alreadySelected)
+                continue;
+
+            targets.push_back(candidate);
+            if (targets.size() >= desiredAdditionalTargets)
+                break;
+        }
+    }
+
     void Register() override
     {
         OnEffectHitTarget += SpellEffectFn(spell_sha_chain_lightning_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_sha_chain_lightning_mastery::ExpandSilverChainTargets, EFFECT_0, TARGET_UNIT_TARGET_ENEMY);
         AfterHit += SpellHitFn(spell_sha_chain_lightning_mastery::HandleAfterHit);
     }
 
