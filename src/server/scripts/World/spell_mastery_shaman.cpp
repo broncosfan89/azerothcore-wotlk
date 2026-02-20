@@ -133,7 +133,7 @@ ChainLightningMasteryEffects BuildChainLightningMasteryEffects(SpellMastery::Spe
     uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     if (totalMasteryLevels > 0)
-        effects.IronDamageBonusPct = float(totalMasteryLevels) * 5.0f;
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 4.0f;
 
     if (bronzeLevel > 0)
         effects.BronzeJumpReductionPct = std::max(0.0f, 30.0f * (1.0f - (float(bronzeLevel) / 10.0f)));
@@ -434,7 +434,6 @@ class spell_sha_chain_lightning_mastery : public SpellScript
         if (_effects.HasDiamondInstantReset && !_isTriggeredCast && !_diamondTriggered)
         {
             _diamondTriggered = true;
-            _playerCaster->RemoveSpellCooldown(_config->AllowedSpellId, true);
             _playerCaster->CastSpell(
                 target,
                 _config->AllowedSpellId,
