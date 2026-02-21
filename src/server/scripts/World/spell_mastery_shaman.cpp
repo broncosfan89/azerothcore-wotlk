@@ -133,7 +133,7 @@ ChainLightningMasteryEffects BuildChainLightningMasteryEffects(SpellMastery::Spe
     uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     if (totalMasteryLevels > 0)
-        effects.IronDamageBonusPct = float(totalMasteryLevels) * 4.0f;
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 2.0f;
 
     if (bronzeLevel > 0)
         effects.BronzeJumpReductionPct = std::max(0.0f, 30.0f * (1.0f - (float(bronzeLevel) / 10.0f)));
@@ -144,7 +144,7 @@ ChainLightningMasteryEffects BuildChainLightningMasteryEffects(SpellMastery::Spe
     if (goldLevel > 0)
     {
         effects.GoldMaxStacks = goldLevel;
-        effects.GoldNatureTakenPctPerStack = 2.0f + (float(goldLevel - 1) * (3.0f / 9.0f));
+        effects.GoldNatureTakenPctPerStack = 1.0f + (float(goldLevel - 1) * (1.5f / 9.0f));
     }
 
     effects.HasDiamondInstantReset = diamondLevel > 0;

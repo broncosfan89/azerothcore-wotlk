@@ -224,7 +224,7 @@ FireballMasteryEffects BuildFireballMasteryEffects(SpellMastery::SpellMasteryPro
     }
 
     if (goldLevel > 0)
-        effects.GoldBurnPct = 20.0f + (float(goldLevel - 1) * (30.0f / 9.0f));
+        effects.GoldBurnPct = 10.0f + (float(goldLevel - 1) * (15.0f / 9.0f));
 
     if (diamondLevel > 0)
     {

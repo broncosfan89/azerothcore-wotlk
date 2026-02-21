@@ -270,13 +270,13 @@ SwipeCatMasteryEffects BuildSwipeCatMasteryEffects(SpellMastery::SpellMasteryPro
         effects.IronEnergyCostReduction = int32(ironLevel) * 2;
 
     if (totalMasteryLevels > 0)
-        effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 8.0f;
+        effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 4.0f;
 
     if (silverLevel > 0)
         effects.SilverEnergyRefund = 1 + int32(silverLevel);
 
     if (goldLevel > 0)
-        effects.GoldBleedPct = 20.0f + (float(goldLevel - 1) * (60.0f / 9.0f));
+        effects.GoldBleedPct = 10.0f + (float(goldLevel - 1) * (30.0f / 9.0f));
 
     if (diamondLevel > 0)
         effects.DiamondHealPct = 8.0f + (float(diamondLevel - 1) * (22.0f / 9.0f));

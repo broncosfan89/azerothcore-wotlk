@@ -66,11 +66,11 @@ ThunderClapMasteryEffects BuildThunderClapMasteryEffects(SpellMastery::SpellMast
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
 
     // Global output ramp: every tier level contributes % damage all the way through Diamond.
-    effects.DamageBonusPct += float(ironLevel) * 20.0f;
-    effects.DamageBonusPct += float(bronzeLevel) * 20.0f;
-    effects.DamageBonusPct += float(silverLevel) * 20.0f;
-    effects.DamageBonusPct += float(goldLevel) * 25.0f;
-    effects.DamageBonusPct += float(diamondLevel) * 30.0f;
+    effects.DamageBonusPct += float(ironLevel) * 10.0f;
+    effects.DamageBonusPct += float(bronzeLevel) * 10.0f;
+    effects.DamageBonusPct += float(silverLevel) * 10.0f;
+    effects.DamageBonusPct += float(goldLevel) * 12.5f;
+    effects.DamageBonusPct += float(diamondLevel) * 15.0f;
 
     // Bronze: every other level grants radius and cooldown gains.
     uint8 bronzeStepLevel = bronzeLevel / 2;
@@ -85,11 +85,11 @@ ThunderClapMasteryEffects BuildThunderClapMasteryEffects(SpellMastery::SpellMast
 
     // Gold: trigger a secondary Thunder Clap pulse.
     if (goldLevel > 0)
-        effects.GoldEchoDamagePct = 20.0f + (float(goldLevel - 1) * (40.0f / 9.0f)); // 20% -> 60%
+        effects.GoldEchoDamagePct = 10.0f + (float(goldLevel - 1) * (20.0f / 9.0f)); // 10% -> 30%
 
     // Diamond: trigger immediate Rend tick damage on targets with your Rend.
     if (diamondLevel > 0)
-        effects.DiamondRendTickPct = 20.0f + (float(diamondLevel - 1) * (80.0f / 9.0f)); // 20% -> 100%
+        effects.DiamondRendTickPct = 10.0f + (float(diamondLevel - 1) * (40.0f / 9.0f)); // 10% -> 50%
 
     return effects;
 }
