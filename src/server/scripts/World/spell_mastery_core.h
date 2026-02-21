@@ -49,6 +49,8 @@ enum SpellMasteryConstants : uint32
     SPELL_ROGUE_KILLING_SPREE_WEAPON_DMG = 57841,
     SPELL_ROGUE_FAN_OF_KNIVES_RANK_1 = 51723,
     SPELL_ROGUE_DEADLY_POISON = 2818,
+    SPELL_HUNTER_VOLLEY_RANK_1 = 1510,
+    SPELL_HUNTER_VOLLEY_TRIGGER_ONE = 42243,
     SPELL_WARLOCK_HAUNT_RANK_1 = 48181,
     SPELL_WARLOCK_HAUNT_RANK_3 = 59163,
     SPELL_WARLOCK_HAUNT_HEAL = 48210,
@@ -141,6 +143,7 @@ void ClearSpellMasteryDruidRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryWarriorRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryWarlockRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryRogueRuntimeStateForPlayer(uint32 guid);
+void ClearSpellMasteryHunterRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryShamanRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryPaladinRuntimeStateForPlayer(uint32 guid);
 void ClearSpellMasteryPriestRuntimeStateForPlayer(uint32 guid);
@@ -149,6 +152,7 @@ void AddSC_spell_mastery_druid();
 void AddSC_spell_mastery_warrior();
 void AddSC_spell_mastery_warlock();
 void AddSC_spell_mastery_rogue();
+void AddSC_spell_mastery_hunter();
 void AddSC_spell_mastery_shaman();
 void AddSC_spell_mastery_paladin();
 void AddSC_spell_mastery_priest();

@@ -36,7 +36,7 @@
 
 namespace SpellMastery
 {
-std::array<ManagedSpellConfig, 15> const ManagedSpellConfigs =
+std::array<ManagedSpellConfig, 16> const ManagedSpellConfigs =
 { {
     { SPELL_MAGE_FIREBALL_RANK_1, SPELL_MAGE_FIREBALL_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MAGE_PYROBLAST_RANK_10, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -48,6 +48,7 @@ std::array<ManagedSpellConfig, 15> const ManagedSpellConfigs =
     { SPELL_WARRIOR_THUNDER_CLAP_RANK_1, SPELL_WARRIOR_THUNDER_CLAP_RANK_9, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_ROGUE_KILLING_SPREE, SPELL_ROGUE_KILLING_SPREE, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_ROGUE_FAN_OF_KNIVES_RANK_1, SPELL_ROGUE_FAN_OF_KNIVES_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_HUNTER_VOLLEY_RANK_1, SPELL_HUNTER_VOLLEY_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARLOCK_HAUNT_RANK_1, SPELL_WARLOCK_HAUNT_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_DRUID_REJUVENATION_RANK_1, SPELL_DRUID_REJUVENATION_RANK_5, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_DRUID_REGROWTH_RANK_1, SPELL_DRUID_REGROWTH_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -276,6 +277,7 @@ void ClearSpellMasteryRuntimeStateForPlayer(uint32 guid)
     ClearSpellMasteryWarriorRuntimeStateForPlayer(guid);
     ClearSpellMasteryWarlockRuntimeStateForPlayer(guid);
     ClearSpellMasteryRogueRuntimeStateForPlayer(guid);
+    ClearSpellMasteryHunterRuntimeStateForPlayer(guid);
     ClearSpellMasteryShamanRuntimeStateForPlayer(guid);
     ClearSpellMasteryPaladinRuntimeStateForPlayer(guid);
     ClearSpellMasteryPriestRuntimeStateForPlayer(guid);
@@ -426,6 +428,15 @@ void EnsureDruidInstantLevelOneSpells(Player* player)
         player->learnSpell(SPELL_DRUID_SWIPE_CAT_RANK_1);
 }
 
+void EnsureHunterInstantLevelOneSpells(Player* player)
+{
+    if (!player || player->getClass() != CLASS_HUNTER || player->GetLevel() < 1)
+        return;
+
+    if (!player->HasSpell(SPELL_HUNTER_VOLLEY_RANK_1))
+        player->learnSpell(SPELL_HUNTER_VOLLEY_RANK_1);
+}
+
 void AddSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint64 xpGain)
 {
     if (!xpGain)
@@ -488,6 +499,7 @@ public:
         SpellMastery::EnsurePaladinInstantLevelOneSpells(player);
         SpellMastery::EnsurePriestInstantLevelOneSpells(player);
         SpellMastery::EnsureDruidInstantLevelOneSpells(player);
+        SpellMastery::EnsureHunterInstantLevelOneSpells(player);
         SpellMastery::EnforceAllManagedSpellBaseRanks(player);
 
         for (SpellMastery::ManagedSpellConfig const& config : SpellMastery::ManagedSpellConfigs)
@@ -506,6 +518,7 @@ public:
         SpellMastery::EnsurePaladinInstantLevelOneSpells(player);
         SpellMastery::EnsurePriestInstantLevelOneSpells(player);
         SpellMastery::EnsureDruidInstantLevelOneSpells(player);
+        SpellMastery::EnsureHunterInstantLevelOneSpells(player);
         SpellMastery::EnforceAllManagedSpellBaseRanks(player);
     }
 
@@ -548,6 +561,7 @@ void AddSC_spell_mastery_fireball()
     AddSC_spell_mastery_warrior();
     AddSC_spell_mastery_warlock();
     AddSC_spell_mastery_rogue();
+    AddSC_spell_mastery_hunter();
     AddSC_spell_mastery_shaman();
     AddSC_spell_mastery_paladin();
     AddSC_spell_mastery_priest();

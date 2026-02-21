@@ -37,6 +37,7 @@ Configured in `src/server/scripts/World/spell_mastery_fireball.cpp`:
 - Thunder Clap baseline rank: Rank 9
 - Killing Spree baseline: base spell
 - Fan of Knives baseline rank: Rank 1
+- Volley baseline rank: Rank 1
 - Haunt baseline rank: Rank 3
 - Rejuvenation baseline rank: Rank 5
 - Regrowth baseline rank: Rank 3
@@ -198,6 +199,23 @@ Source: `src/server/scripts/World/spell_mastery_rogue.cpp`
   - `minimum(5, Gold level)` combo points on first valid hit per cast
 - Diamond poison application:
   - Applies Deadly Poison to each hit target
+
+## Hunter
+
+Source: `src/server/scripts/World/spell_mastery_hunter.cpp`
+
+### Volley
+
+- Iron damage bonus percent:
+  - `10 * Iron level`
+- Bronze radius scaling:
+  - Radius multiplier `1 + 1.5 * (Bronze level / 10)`
+- Silver duration bonus:
+  - `1000 * Silver level` milliseconds
+- Gold tick-rate increase:
+  - Tick interval `1000 - round(500 * Gold level / 10)` milliseconds, minimum 500 milliseconds
+- Diamond AoE burst damage:
+  - `20 + (Diamond level - 1) * (40 / 9)` percent (20% to 60%) to enemies within 6 yards of each target hit
 
 ## Warlock
 
