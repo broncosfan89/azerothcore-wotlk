@@ -166,7 +166,7 @@ LavaBurstMasteryEffects BuildLavaBurstMasteryEffects(SpellMastery::SpellMasteryP
         effects.IronCooldownReductionMs = int32(std::lround(float(LAVA_BURST_MAX_COOLDOWN_REDUCTION_MS) * (float(ironLevel) / 10.0f)));
 
     if (totalMasteryLevels > 0)
-        effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 3.0f;
+        effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 1.0f;
 
     if (silverLevel > 0)
         effects.SilverFireDamageTakenPct = float(silverLevel) * 2.5f;
