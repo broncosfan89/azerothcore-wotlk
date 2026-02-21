@@ -95,13 +95,13 @@ PowerWordShieldMasteryEffects BuildPowerWordShieldMasteryEffects(SpellMastery::S
     uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     if (totalMasteryLevels > 0)
-        effects.IronShieldBonusPct = float(totalMasteryLevels) * 70.0f;
+        effects.IronShieldBonusPct = float(totalMasteryLevels) * 56.0f;
 
     if (bronzeLevel > 0)
         effects.BronzeWeakenedSoulReductionPct = std::min<float>(60.0f, float(bronzeLevel) * 6.0f);
 
     if (silverLevel > 0)
-        effects.SilverHotPctPerTick = float(silverLevel) * 5.0f;
+        effects.SilverHotPctPerTick = float(silverLevel) * 4.0f;
 
     if (goldLevel > 0)
         effects.GoldReflectPct = 15.0f + (float(goldLevel) * 6.0f);
