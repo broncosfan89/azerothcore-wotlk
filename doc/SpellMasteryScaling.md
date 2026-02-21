@@ -36,6 +36,7 @@ Configured in `src/server/scripts/World/spell_mastery_fireball.cpp`:
 - Consecration baseline rank: Rank 1
 - Thunder Clap baseline rank: Rank 9
 - Killing Spree baseline: base spell
+- Fan of Knives baseline rank: Rank 1
 - Haunt baseline rank: Rank 3
 - Rejuvenation baseline rank: Rank 5
 - Regrowth baseline rank: Rank 3
@@ -184,6 +185,19 @@ Source: `src/server/scripts/World/spell_mastery_rogue.cpp`
   - `8 * Total mastery levels`
 - Gold bleed percent:
   - `20 + (Gold level - 1) * (30 / 9)` (20% to 50%)
+
+### Fan of Knives
+
+- Iron energy refund (effective cost from 50 down to 20 at Iron 10):
+  - `3 * Iron level` energy refunded after cast
+- Damage bonus percent (Bronze scaling continues through Diamond):
+  - `2 * Total mastery levels`
+- Silver radius scaling (8 yards to 20 yards at Silver 10):
+  - Radius multiplier `1 + 1.5 * (Silver level / 10)`
+- Gold combo point generation:
+  - `minimum(5, Gold level)` combo points on first valid hit per cast
+- Diamond poison application:
+  - Applies Deadly Poison to each hit target
 
 ## Warlock
 

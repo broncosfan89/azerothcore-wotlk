@@ -40,11 +40,21 @@ struct KillingSpreeMasteryEffects
     float DiamondExtraStrikeChancePct = 0.0f;
 };
 
+struct FanOfKnivesMasteryEffects
+{
+    int32 IronEnergyRefund = 0;
+    float DamageBonusPct = 0.0f;
+    float SilverRadiusMultiplier = 1.0f;
+    uint8 GoldComboPoints = 0;
+    bool DiamondApplyPoison = false;
+};
+
 uint64 constexpr KILLING_SPREE_XP_PER_USE = 500;
 uint32 constexpr KILLING_SPREE_XP_GUARD_MS = 250;
 uint32 constexpr KILLING_SPREE_BASE_ATTACK_COUNT = 5;
 uint32 constexpr KILLING_SPREE_BASE_COOLDOWN_MS = 90000;
 uint32 constexpr KILLING_SPREE_SILVER_COOLDOWN_MS = 45000;
+uint32 constexpr FAN_OF_KNIVES_XP_GUARD_MS = 250;
 
 std::unordered_map<uint32, uint8> KillingSpreePendingDiamondExtra;
 std::mutex KillingSpreePendingDiamondExtraMutex;
@@ -78,6 +88,39 @@ KillingSpreeMasteryEffects BuildKillingSpreeMasteryEffects(SpellMastery::SpellMa
     // Diamond: each hit has a chance to trigger an extra Killing Spree strike.
     if (diamondLevel > 0)
         effects.DiamondExtraStrikeChancePct = 5.0f + (float(diamondLevel - 1) * (25.0f / 9.0f)); // 5% -> 30%
+
+    return effects;
+}
+
+FanOfKnivesMasteryEffects BuildFanOfKnivesMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    FanOfKnivesMasteryEffects effects;
+
+    uint8 const ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 const bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
+
+    // Iron: reduce effective energy cost from 50 down to 20 (refund up to 30 energy).
+    if (ironLevel > 0)
+        effects.IronEnergyRefund = int32(ironLevel) * 3;
+
+    // Bronze through Diamond: +2% damage per mastery level.
+    if (totalMasteryLevels > 0)
+        effects.DamageBonusPct = float(totalMasteryLevels) * 2.0f;
+
+    // Silver: increase range from 8 yards to 20 yards at Silver 10.
+    if (silverLevel > 0)
+        effects.SilverRadiusMultiplier += 1.5f * (float(silverLevel) / 10.0f);
+
+    // Gold: generate combo points on first valid hit each cast.
+    if (goldLevel > 0)
+        effects.GoldComboPoints = uint8(std::min<uint32>(5, goldLevel));
+
+    // Diamond: apply poison to every hit target.
+    effects.DiamondApplyPoison = diamondLevel > 0;
 
     return effects;
 }
@@ -251,8 +294,91 @@ private:
     bool _isDiamondExtraCast = false;
 };
 
+class spell_rog_fan_of_knives_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_rog_fan_of_knives_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_ROGUE_FAN_OF_KNIVES_RANK_1)
+            return false;
+
+        SpellMastery::SpellMasteryProgress const& progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildFanOfKnivesMasteryEffects(progress, *_config);
+        return true;
+    }
+
+    void HandleBeforeCast()
+    {
+        if (_effects.SilverRadiusMultiplier > 1.0f)
+            GetSpell()->SetSpellValue(SPELLVALUE_RADIUS_MOD, int32(std::lround(_effects.SilverRadiusMultiplier * 10000.0f)));
+    }
+
+    void HandleOnHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+
+        if (_effects.DamageBonusPct > 0.0f)
+        {
+            int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.DamageBonusPct / 100.0f))));
+            hitDamage = std::max(hitDamage, scaledDamage);
+        }
+
+        SetHitDamage(hitDamage);
+
+        if (!_xpAwarded && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, FAN_OF_KNIVES_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        if (!_comboPointsGranted && _effects.GoldComboPoints > 0)
+        {
+            _playerCaster->AddComboPoints(target, int8(_effects.GoldComboPoints));
+            _comboPointsGranted = true;
+        }
+
+        if (_effects.DiamondApplyPoison)
+            _playerCaster->CastSpell(target, SpellMastery::SPELL_ROGUE_DEADLY_POISON, TRIGGERED_FULL_MASK);
+    }
+
+    void HandleAfterCast()
+    {
+        if (_effects.IronEnergyRefund > 0)
+            _playerCaster->ModifyPower(POWER_ENERGY, _effects.IronEnergyRefund);
+    }
+
+    void Register() override
+    {
+        BeforeCast += SpellCastFn(spell_rog_fan_of_knives_mastery::HandleBeforeCast);
+        OnHit += SpellHitFn(spell_rog_fan_of_knives_mastery::HandleOnHit);
+        AfterCast += SpellCastFn(spell_rog_fan_of_knives_mastery::HandleAfterCast);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    FanOfKnivesMasteryEffects _effects;
+    bool _xpAwarded = false;
+    bool _comboPointsGranted = false;
+};
+
 void AddSC_spell_mastery_rogue()
 {
     RegisterSpellScript(spell_rog_killing_spree_mastery);
     RegisterSpellScript(spell_rog_killing_spree_weapon_mastery);
+    RegisterSpellScript(spell_rog_fan_of_knives_mastery);
 }
