@@ -49,12 +49,23 @@ struct FanOfKnivesMasteryEffects
     bool DiamondApplyPoison = false;
 };
 
+struct RuptureMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    int32 BronzeTickIntervalMs = 2000;
+    float SilverDamageTakenPct = 0.0f;
+    int32 GoldDurationBonusMs = 0;
+    bool DiamondFullDamageAtOneComboPoint = false;
+};
+
 uint64 constexpr KILLING_SPREE_XP_PER_USE = 500;
 uint32 constexpr KILLING_SPREE_XP_GUARD_MS = 250;
 uint32 constexpr KILLING_SPREE_BASE_ATTACK_COUNT = 5;
 uint32 constexpr KILLING_SPREE_BASE_COOLDOWN_MS = 90000;
 uint32 constexpr KILLING_SPREE_SILVER_COOLDOWN_MS = 45000;
 uint32 constexpr FAN_OF_KNIVES_XP_GUARD_MS = 250;
+uint32 constexpr RUPTURE_XP_GUARD_MS = 250;
+int32 constexpr RUPTURE_MIN_TICK_INTERVAL_MS = 500;
 
 std::unordered_map<uint32, uint8> KillingSpreePendingDiamondExtra;
 std::mutex KillingSpreePendingDiamondExtraMutex;
@@ -122,6 +133,33 @@ FanOfKnivesMasteryEffects BuildFanOfKnivesMasteryEffects(SpellMastery::SpellMast
     // Diamond: apply poison to every hit target.
     effects.DiamondApplyPoison = diamondLevel > 0;
 
+    return effects;
+}
+
+RuptureMasteryEffects BuildRuptureMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    RuptureMasteryEffects effects;
+
+    uint8 const ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 const bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
+
+    if (totalMasteryLevels > 0)
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 25.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeTickIntervalMs = RUPTURE_MIN_TICK_INTERVAL_MS;
+
+    if (silverLevel > 0)
+        effects.SilverDamageTakenPct = float(silverLevel) * 2.0f;
+
+    if (goldLevel > 0)
+        effects.GoldDurationBonusMs = int32(goldLevel) * 500;
+
+    effects.DiamondFullDamageAtOneComboPoint = diamondLevel > 0;
     return effects;
 }
 }
@@ -376,9 +414,156 @@ private:
     bool _comboPointsGranted = false;
 };
 
+class spell_rog_rupture_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_rog_rupture_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_ROGUE_RUPTURE_RANK_1)
+            return false;
+
+        SpellMastery::SpellMasteryProgress const& progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildRuptureMasteryEffects(progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+
+        if (_effects.GoldDurationBonusMs > 0)
+        {
+            int32 const baseDuration = GetSpellInfo()->GetMaxDuration();
+            if (baseDuration > 0)
+                GetSpell()->SetSpellValue(SPELLVALUE_AURA_DURATION, baseDuration + _effects.GoldDurationBonusMs);
+        }
+
+        return true;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, RUPTURE_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+    }
+
+    void Register() override
+    {
+        AfterHit += SpellHitFn(spell_rog_rupture_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    RuptureMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _xpAwarded = false;
+};
+
+class spell_rog_rupture_mastery_aura : public AuraScript
+{
+    PrepareAuraScript(spell_rog_rupture_mastery_aura);
+
+    bool Load() override
+    {
+        Unit* caster = GetCaster();
+        if (!caster || !caster->IsPlayer() || !GetUnitOwner())
+            return false;
+
+        _playerCaster = caster->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_ROGUE_RUPTURE_RANK_1)
+            return false;
+
+        SpellMastery::SpellMasteryProgress const& progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildRuptureMasteryEffects(progress, *_config);
+        return true;
+    }
+
+    void CalculatePeriodicDamageAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    {
+        if (!_playerCaster || amount <= 0)
+            return;
+
+        amount = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), amount);
+
+        float totalBonusPct = _effects.IronDamageBonusPct + _effects.SilverDamageTakenPct;
+        if (totalBonusPct > 0.0f)
+        {
+            int32 const scaledAmount = int32(std::lround(float(amount) * (1.0f + (totalBonusPct / 100.0f))));
+            amount = std::max(amount, scaledAmount);
+        }
+
+        if (_effects.DiamondFullDamageAtOneComboPoint)
+        {
+            uint8 comboPoints = std::max<uint8>(1, _playerCaster->GetComboPoints());
+            if (comboPoints < 5)
+            {
+                int32 const scaledForComboPoints = int32(std::lround(float(amount) * (5.0f / float(comboPoints))));
+                amount = std::max(amount, scaledForComboPoints);
+            }
+        }
+    }
+
+    void CalculatePeriodicTiming(AuraEffect const* /*aurEff*/, bool& isPeriodic, int32& amplitude)
+    {
+        if (_effects.BronzeTickIntervalMs <= 0)
+            return;
+
+        isPeriodic = true;
+        amplitude = _effects.BronzeTickIntervalMs;
+    }
+
+    void HandlePeriodicUpdate(AuraEffect* aurEff)
+    {
+        if (!aurEff || _effects.BronzeTickIntervalMs <= 0)
+            return;
+
+        if (aurEff->GetPeriodicTimer() > _effects.BronzeTickIntervalMs)
+            aurEff->SetPeriodicTimer(_effects.BronzeTickIntervalMs);
+    }
+
+    void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (_effects.BronzeTickIntervalMs > 0)
+        {
+            if (Aura* aura = GetAura())
+            {
+                if (AuraEffect* periodic = aura->GetEffect(EFFECT_0))
+                {
+                    if (periodic->GetPeriodicTimer() > _effects.BronzeTickIntervalMs)
+                        periodic->SetPeriodicTimer(_effects.BronzeTickIntervalMs);
+                }
+            }
+        }
+    }
+
+    void Register() override
+    {
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_rog_rupture_mastery_aura::CalculatePeriodicDamageAmount, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+        DoEffectCalcPeriodic += AuraEffectCalcPeriodicFn(spell_rog_rupture_mastery_aura::CalculatePeriodicTiming, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_rog_rupture_mastery_aura::HandlePeriodicUpdate, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectApply += AuraEffectApplyFn(spell_rog_rupture_mastery_aura::HandleEffectApply, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    RuptureMasteryEffects _effects;
+};
+
 void AddSC_spell_mastery_rogue()
 {
     RegisterSpellScript(spell_rog_killing_spree_mastery);
     RegisterSpellScript(spell_rog_killing_spree_weapon_mastery);
     RegisterSpellScript(spell_rog_fan_of_knives_mastery);
+    RegisterSpellAndAuraScriptPair(spell_rog_rupture_mastery, spell_rog_rupture_mastery_aura);
 }

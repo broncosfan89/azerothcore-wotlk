@@ -36,7 +36,7 @@
 
 namespace SpellMastery
 {
-std::array<ManagedSpellConfig, 18> const ManagedSpellConfigs =
+std::array<ManagedSpellConfig, 19> const ManagedSpellConfigs =
 { {
     { SPELL_MAGE_FIREBALL_RANK_1, SPELL_MAGE_FIREBALL_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MAGE_PYROBLAST_RANK_10, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -48,6 +48,7 @@ std::array<ManagedSpellConfig, 18> const ManagedSpellConfigs =
     { SPELL_WARRIOR_THUNDER_CLAP_RANK_1, SPELL_WARRIOR_THUNDER_CLAP_RANK_9, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_ROGUE_KILLING_SPREE, SPELL_ROGUE_KILLING_SPREE, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_ROGUE_FAN_OF_KNIVES_RANK_1, SPELL_ROGUE_FAN_OF_KNIVES_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_ROGUE_RUPTURE_RANK_1, SPELL_ROGUE_RUPTURE_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_HUNTER_VOLLEY_RANK_1, SPELL_HUNTER_VOLLEY_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_HUNTER_SERPENT_STING_RANK_1, SPELL_HUNTER_SERPENT_STING_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARLOCK_HAUNT_RANK_1, SPELL_WARLOCK_HAUNT_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -67,6 +68,9 @@ std::mutex SpellMasteryCacheMutex;
 
 uint32 constexpr EARLY_ACCESS_LEVEL_OFFSET = 4;
 float constexpr EARLY_ACCESS_MIN_SCALE = 0.05f;
+uint8 constexpr LOW_RANK_LEVEL_SCALING_MAX_RANK = 3;
+float constexpr LOW_RANK_LEVEL_SCALING_PER_LEVEL = 0.08f;
+float constexpr LOW_RANK_LEVEL_SCALING_MAX_MULTIPLIER = 8.0f;
 
 ManagedSpellConfig const* GetManagedSpellConfigByBaseSpell(uint32 baseSpellId)
 {
@@ -119,12 +123,33 @@ float ComputeEarlyAccessSpellScale(Player* player, SpellInfo const* spellInfo)
 
     uint32 const playerLevel = std::max<uint32>(1, player->GetLevel());
     uint32 const naturalLevel = std::max<uint32>(spellInfo->SpellLevel, spellInfo->BaseLevel);
-    if (naturalLevel <= 1 || playerLevel >= naturalLevel)
-        return 1.0f;
+    if (naturalLevel > 1 && playerLevel < naturalLevel)
+    {
+        float const adjustedPlayer = float(playerLevel + EARLY_ACCESS_LEVEL_OFFSET);
+        float const adjustedNatural = float(naturalLevel + EARLY_ACCESS_LEVEL_OFFSET);
+        return std::clamp(adjustedPlayer / adjustedNatural, EARLY_ACCESS_MIN_SCALE, 1.0f);
+    }
 
-    float const adjustedPlayer = float(playerLevel + EARLY_ACCESS_LEVEL_OFFSET);
-    float const adjustedNatural = float(naturalLevel + EARLY_ACCESS_LEVEL_OFFSET);
-    return std::clamp(adjustedPlayer / adjustedNatural, EARLY_ACCESS_MIN_SCALE, 1.0f);
+    // Normalize very low spell ranks so rank-locked mastery baselines stay viable at high player level.
+    uint32 const spellRank = sSpellMgr->GetSpellRank(spellInfo->Id);
+    bool isLowRankMasterySpell = spellRank >= 1 && spellRank <= LOW_RANK_LEVEL_SCALING_MAX_RANK;
+    if (!isLowRankMasterySpell)
+    {
+        if (ManagedSpellConfig const* config = GetManagedSpellConfigForSpell(spellInfo->Id))
+        {
+            uint32 const allowedRank = sSpellMgr->GetSpellRank(config->AllowedSpellId);
+            isLowRankMasterySpell = allowedRank >= 1 && allowedRank <= LOW_RANK_LEVEL_SCALING_MAX_RANK;
+        }
+    }
+
+    if (isLowRankMasterySpell && playerLevel > naturalLevel)
+    {
+        uint32 const levelGap = playerLevel - naturalLevel;
+        float const multiplier = 1.0f + (float(levelGap) * LOW_RANK_LEVEL_SCALING_PER_LEVEL);
+        return std::clamp(multiplier, 1.0f, LOW_RANK_LEVEL_SCALING_MAX_MULTIPLIER);
+    }
+
+    return 1.0f;
 }
 
 int32 ApplyEarlyAccessSpellScale(Player* player, SpellInfo const* spellInfo, int32 amount)

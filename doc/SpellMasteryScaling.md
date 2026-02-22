@@ -17,10 +17,12 @@ When any mastery tuning value changes in C++:
 
 ## Global Early-Access Scaling
 
-Some spells are downscaled when learned early at low character level.
+Some spells are dynamically scaled based on character level.
 
-- Formula:
+- Early-access downscaling formula:
   - `scale = clamp((player level + 4) / (spell natural level + 4), 0.05, 1.0)`
+- Low-rank normalization (for rank 1 to rank 3 spells):
+  - `scale = clamp(1 + (player level - spell natural level) * 0.08, 1.0, 8.0)`
 - Source: `src/server/scripts/World/spell_mastery_fireball.cpp`
 
 ## Managed Spell Baselines
@@ -37,6 +39,7 @@ Configured in `src/server/scripts/World/spell_mastery_fireball.cpp`:
 - Thunder Clap baseline rank: Rank 9
 - Killing Spree baseline: base spell
 - Fan of Knives baseline rank: Rank 1
+- Rupture baseline rank: Rank 1
 - Volley baseline rank: Rank 1
 - Serpent Sting baseline rank: Rank 1
 - Haunt baseline rank: Rank 3
@@ -84,7 +87,7 @@ Source: `src/server/scripts/World/spell_mastery_druid.cpp`
 ### Rejuvenation
 
 - Periodic healing bonus percent:
-  - `20 * Iron level + 20 * Bronze level + 20 * Silver level + 25 * Gold level + 30 * Diamond level`
+  - `40 * Iron level + 40 * Bronze level + 40 * Silver level + 50 * Gold level + 60 * Diamond level`
 - Silver splash healing percent:
   - `15 + (Silver level - 1) * (25 / 9)` (15% to 40%)
 - Gold extra stack bonus healing percent:
@@ -95,7 +98,7 @@ Source: `src/server/scripts/World/spell_mastery_druid.cpp`
 ### Regrowth
 
 - Direct and periodic healing bonus percent:
-  - `20 * Iron level + 20 * Bronze level + 20 * Silver level + 25 * Gold level + 30 * Diamond level`
+  - `40 * Iron level + 40 * Bronze level + 40 * Silver level + 50 * Gold level + 60 * Diamond level`
 - Silver splash healing percent:
   - `12 + (Silver level - 1) * (20 / 9)` (12% to 32%)
 - Gold extra stack bonus healing percent:
@@ -201,6 +204,19 @@ Source: `src/server/scripts/World/spell_mastery_rogue.cpp`
   - `minimum(5, Gold level)` combo points on first valid hit per cast
 - Diamond poison application:
   - Applies Deadly Poison to each hit target
+
+### Rupture
+
+- Periodic damage bonus percent:
+  - `25 * Total mastery levels`
+- Silver extra damage taken percent (applied to rupture periodic damage):
+  - `2 * Silver level`
+- Bronze tick interval:
+  - `500` milliseconds once Bronze is unlocked
+- Gold duration bonus:
+  - `500 * Gold level` milliseconds
+- Diamond combo-point normalization:
+  - Enables full-damage scaling at 1 combo point
 
 ## Hunter
 

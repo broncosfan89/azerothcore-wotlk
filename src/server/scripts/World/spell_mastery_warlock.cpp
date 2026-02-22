@@ -24,6 +24,7 @@
 #include "Player.h"
 #include "SpellAuras.h"
 #include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "Unit.h"
@@ -58,6 +59,8 @@ uint32 constexpr HAUNT_XP_GUARD_MS = 250;
 uint32 constexpr SHADOW_BOLT_XP_GUARD_MS = 250;
 float constexpr SHADOW_BOLT_SILVER_SPLASH_RADIUS = 8.0f;
 float constexpr SHADOW_BOLT_DIAMOND_SEARCH_RADIUS = 25.0f;
+float constexpr SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_PER_LEVEL = 0.30f;
+float constexpr SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_MAX_MULTIPLIER = 25.0f;
 
 HauntMasteryEffects BuildHauntMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -146,6 +149,26 @@ bool IsWarlockPeriodicDotAura(Aura const* aura, ObjectGuid casterGuid)
     }
 
     return false;
+}
+
+int32 ApplyShadowBoltLowRankLevelFloor(Player* player, SpellInfo const* spellInfo, int32 amount)
+{
+    if (!player || !spellInfo || amount <= 0)
+        return amount;
+
+    uint32 const rank = sSpellMgr->GetSpellRank(spellInfo->Id);
+    if (rank < 1 || rank > 3)
+        return amount;
+
+    uint32 const playerLevel = std::max<uint32>(1, player->GetLevel());
+    uint32 const naturalLevel = std::max<uint32>(1, std::max<uint32>(spellInfo->SpellLevel, spellInfo->BaseLevel));
+    if (playerLevel <= naturalLevel)
+        return amount;
+
+    uint32 const levelGap = playerLevel - naturalLevel;
+    float const multiplier = std::clamp(1.0f + (float(levelGap) * SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_PER_LEVEL), 1.0f, SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_MAX_MULTIPLIER);
+    int32 const scaledAmount = int32(std::lround(float(amount) * multiplier));
+    return std::max(amount, scaledAmount);
 }
 }
 
@@ -355,7 +378,9 @@ class spell_warl_shadow_bolt_mastery : public SpellScript
         if (hitDamage <= 0)
             return;
 
+        int32 const rawHitDamage = hitDamage;
         hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+        hitDamage = std::max(hitDamage, ApplyShadowBoltLowRankLevelFloor(_playerCaster, GetSpellInfo(), rawHitDamage));
 
         if (_effects.IronDamageBonusPct > 0.0f)
         {
