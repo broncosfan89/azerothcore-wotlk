@@ -476,6 +476,18 @@ void EnsureWarlockInstantLevelOneSpells(Player* player)
         player->learnSpell(SPELL_WARLOCK_SHADOW_BOLT_RANK_1);
 }
 
+void EnsureRogueInstantLevelOneSpells(Player* player)
+{
+    if (!player || player->getClass() != CLASS_ROGUE || player->GetLevel() < 1)
+        return;
+
+    if (!player->HasSpell(SPELL_ROGUE_FAN_OF_KNIVES_RANK_1))
+        player->learnSpell(SPELL_ROGUE_FAN_OF_KNIVES_RANK_1);
+
+    if (!player->HasSpell(SPELL_ROGUE_RUPTURE_RANK_1))
+        player->learnSpell(SPELL_ROGUE_RUPTURE_RANK_1);
+}
+
 void AddSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint64 xpGain)
 {
     if (!xpGain)
@@ -540,6 +552,7 @@ public:
         SpellMastery::EnsureDruidInstantLevelOneSpells(player);
         SpellMastery::EnsureHunterInstantLevelOneSpells(player);
         SpellMastery::EnsureWarlockInstantLevelOneSpells(player);
+        SpellMastery::EnsureRogueInstantLevelOneSpells(player);
         SpellMastery::EnforceAllManagedSpellBaseRanks(player);
 
         for (SpellMastery::ManagedSpellConfig const& config : SpellMastery::ManagedSpellConfigs)
@@ -560,6 +573,7 @@ public:
         SpellMastery::EnsureDruidInstantLevelOneSpells(player);
         SpellMastery::EnsureHunterInstantLevelOneSpells(player);
         SpellMastery::EnsureWarlockInstantLevelOneSpells(player);
+        SpellMastery::EnsureRogueInstantLevelOneSpells(player);
         SpellMastery::EnforceAllManagedSpellBaseRanks(player);
     }
 

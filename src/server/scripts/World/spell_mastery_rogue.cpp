@@ -533,6 +533,13 @@ class spell_rog_rupture_mastery_aura : public AuraScript
 
     void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
+        if (_playerCaster && _config)
+        {
+            Unit* target = GetUnitOwner();
+            if (target && _playerCaster->IsHostileTo(target) && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, RUPTURE_XP_GUARD_MS))
+                SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+        }
+
         if (_effects.BronzeTickIntervalMs > 0)
         {
             if (Aura* aura = GetAura())
