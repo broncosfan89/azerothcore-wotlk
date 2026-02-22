@@ -38,7 +38,9 @@ Configured in `src/server/scripts/World/spell_mastery_fireball.cpp`:
 - Killing Spree baseline: base spell
 - Fan of Knives baseline rank: Rank 1
 - Volley baseline rank: Rank 1
+- Serpent Sting baseline rank: Rank 1
 - Haunt baseline rank: Rank 3
+- Shadow Bolt baseline rank: Rank 1
 - Rejuvenation baseline rank: Rank 5
 - Regrowth baseline rank: Rank 3
 - Rip baseline rank: Rank 1
@@ -217,6 +219,19 @@ Source: `src/server/scripts/World/spell_mastery_hunter.cpp`
 - Diamond AoE burst damage:
   - `20 + (Diamond level - 1) * (40 / 9)` percent (20% to 60%) to enemies within 6 yards of each target hit
 
+### Serpent Sting
+
+- Iron mana regeneration:
+  - `2 * Iron level` percent of max mana on successful application
+- Bronze periodic damage bonus percent:
+  - `6 * Bronze level`
+- Silver tick interval:
+  - `3000 - round(2000 * Silver level / 10)` milliseconds, minimum 1000 milliseconds
+- Gold spread:
+  - Up to `Gold level` nearby targets, each takes `20 + (Gold level - 1) * (20 / 9)` percent of each tick
+- Diamond detonation on natural expiration:
+  - AoE damage equal to `60 + 10 * (Diamond level - 1)` percent of tick damage
+
 ## Warlock
 
 Source: `src/server/scripts/World/spell_mastery_warlock.cpp`
@@ -229,3 +244,16 @@ Source: `src/server/scripts/World/spell_mastery_warlock.cpp`
   - `20 + (Bronze level - 1) * (80 / 9)` (20% to 100%)
 - Silver return heal percent:
   - `100 + (Silver level - 1) * (100 / 9)` (100% to 200%)
+
+### Shadow Bolt
+
+- Iron direct damage bonus percent:
+  - `8 * Iron level`
+- Bronze mana refund percent (effective mana-cost reduction):
+  - `6 + 2 * (Bronze level - 1)` (6% to 24%) of cast power cost
+- Silver splash damage percent:
+  - `20 + (Silver level - 1) * (30 / 9)` (20% to 50%) to nearby enemies
+- Gold bonus DoT per tick:
+  - Applies Corruption with at least `8 + (Gold level - 1) * (20 / 9)` percent of hit damage as per-tick value
+- Diamond extra target hits:
+  - Fires at up to `Diamond level` nearby additional targets

@@ -36,7 +36,7 @@
 
 namespace SpellMastery
 {
-std::array<ManagedSpellConfig, 16> const ManagedSpellConfigs =
+std::array<ManagedSpellConfig, 18> const ManagedSpellConfigs =
 { {
     { SPELL_MAGE_FIREBALL_RANK_1, SPELL_MAGE_FIREBALL_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MAGE_PYROBLAST_RANK_10, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -49,7 +49,9 @@ std::array<ManagedSpellConfig, 16> const ManagedSpellConfigs =
     { SPELL_ROGUE_KILLING_SPREE, SPELL_ROGUE_KILLING_SPREE, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_ROGUE_FAN_OF_KNIVES_RANK_1, SPELL_ROGUE_FAN_OF_KNIVES_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_HUNTER_VOLLEY_RANK_1, SPELL_HUNTER_VOLLEY_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_HUNTER_SERPENT_STING_RANK_1, SPELL_HUNTER_SERPENT_STING_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARLOCK_HAUNT_RANK_1, SPELL_WARLOCK_HAUNT_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_WARLOCK_SHADOW_BOLT_RANK_1, SPELL_WARLOCK_SHADOW_BOLT_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_DRUID_REJUVENATION_RANK_1, SPELL_DRUID_REJUVENATION_RANK_5, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_DRUID_REGROWTH_RANK_1, SPELL_DRUID_REGROWTH_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_DRUID_RIP_RANK_1, SPELL_DRUID_RIP_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -437,6 +439,18 @@ void EnsureHunterInstantLevelOneSpells(Player* player)
         player->learnSpell(SPELL_HUNTER_VOLLEY_RANK_1);
 }
 
+void EnsureWarlockInstantLevelOneSpells(Player* player)
+{
+    if (!player || player->getClass() != CLASS_WARLOCK || player->GetLevel() < 1)
+        return;
+
+    if (!player->HasSpell(SPELL_WARLOCK_HAUNT_RANK_3))
+        player->learnSpell(SPELL_WARLOCK_HAUNT_RANK_3);
+
+    if (!player->HasSpell(SPELL_WARLOCK_SHADOW_BOLT_RANK_1))
+        player->learnSpell(SPELL_WARLOCK_SHADOW_BOLT_RANK_1);
+}
+
 void AddSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint64 xpGain)
 {
     if (!xpGain)
@@ -500,6 +514,7 @@ public:
         SpellMastery::EnsurePriestInstantLevelOneSpells(player);
         SpellMastery::EnsureDruidInstantLevelOneSpells(player);
         SpellMastery::EnsureHunterInstantLevelOneSpells(player);
+        SpellMastery::EnsureWarlockInstantLevelOneSpells(player);
         SpellMastery::EnforceAllManagedSpellBaseRanks(player);
 
         for (SpellMastery::ManagedSpellConfig const& config : SpellMastery::ManagedSpellConfigs)
@@ -519,6 +534,7 @@ public:
         SpellMastery::EnsurePriestInstantLevelOneSpells(player);
         SpellMastery::EnsureDruidInstantLevelOneSpells(player);
         SpellMastery::EnsureHunterInstantLevelOneSpells(player);
+        SpellMastery::EnsureWarlockInstantLevelOneSpells(player);
         SpellMastery::EnforceAllManagedSpellBaseRanks(player);
     }
 

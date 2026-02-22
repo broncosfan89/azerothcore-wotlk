@@ -17,6 +17,10 @@
 
 #include "spell_mastery_core.h"
 
+#include "Cell.h"
+#include "CellImpl.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "Player.h"
 #include "SpellAuras.h"
 #include "SpellInfo.h"
@@ -26,6 +30,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <list>
 #include <vector>
 
 namespace
@@ -39,8 +44,20 @@ struct HauntMasteryEffects
     int32 DiamondDotExtensionMs = 0;
 };
 
+struct ShadowBoltMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    float BronzeManaRefundPct = 0.0f;
+    float SilverSplashDamagePct = 0.0f;
+    float GoldDotPerTickPct = 0.0f;
+    uint8 DiamondExtraTargets = 0;
+};
+
 int32 constexpr HAUNT_DIAMOND_DOT_MAX_DURATION_MS = 60000;
 uint32 constexpr HAUNT_XP_GUARD_MS = 250;
+uint32 constexpr SHADOW_BOLT_XP_GUARD_MS = 250;
+float constexpr SHADOW_BOLT_SILVER_SPLASH_RADIUS = 8.0f;
+float constexpr SHADOW_BOLT_DIAMOND_SEARCH_RADIUS = 25.0f;
 
 HauntMasteryEffects BuildHauntMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -71,6 +88,39 @@ HauntMasteryEffects BuildHauntMasteryEffects(SpellMastery::SpellMasteryProgress 
     // Diamond: refresh all your Warlock DoTs and extend their duration.
     if (diamondLevel > 0)
         effects.DiamondDotExtensionMs = int32(std::lround(1000.0f + (float(diamondLevel - 1) * (4000.0f / 9.0f))));
+
+    return effects;
+}
+
+ShadowBoltMasteryEffects BuildShadowBoltMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    ShadowBoltMasteryEffects effects;
+
+    uint8 const ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 const bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    // Iron: increase Shadow Bolt direct damage.
+    if (ironLevel > 0)
+        effects.IronDamageBonusPct = float(ironLevel) * 8.0f;
+
+    // Bronze: reduce mana cost by refunding part of cast power cost.
+    if (bronzeLevel > 0)
+        effects.BronzeManaRefundPct = 6.0f + (float(bronzeLevel - 1) * 2.0f); // 6% -> 24%
+
+    // Silver: splash damage around the primary target.
+    if (silverLevel > 0)
+        effects.SilverSplashDamagePct = 20.0f + (float(silverLevel - 1) * (30.0f / 9.0f)); // 20% -> 50%
+
+    // Gold: apply a scaling Shadow DoT.
+    if (goldLevel > 0)
+        effects.GoldDotPerTickPct = 8.0f + (float(goldLevel - 1) * (20.0f / 9.0f)); // 8% -> 28%
+
+    // Diamond: hit additional nearby targets.
+    if (diamondLevel > 0)
+        effects.DiamondExtraTargets = diamondLevel;
 
     return effects;
 }
@@ -275,7 +325,165 @@ private:
     HauntMasteryEffects _effects;
 };
 
+class spell_warl_shadow_bolt_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_warl_shadow_bolt_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_WARLOCK_SHADOW_BOLT_RANK_1)
+            return false;
+
+        SpellMastery::SpellMasteryProgress const& progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildShadowBoltMasteryEffects(progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+        return true;
+    }
+
+    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+
+        if (_effects.IronDamageBonusPct > 0.0f)
+        {
+            int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.IronDamageBonusPct / 100.0f))));
+            hitDamage = std::max(hitDamage, scaledDamage);
+        }
+
+        SetHitDamage(hitDamage);
+        _finalHitDamage = hitDamage;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 const hitDamage = std::max<int32>(GetHitDamage(), _finalHitDamage);
+        if (hitDamage <= 0)
+            return;
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, SHADOW_BOLT_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        TryApplyBronzeManaRefund();
+        TryApplySilverSplash(target, hitDamage);
+        TryApplyGoldDot(target, hitDamage);
+        TryApplyDiamondExtraBolts(target);
+    }
+
+    void TryApplyBronzeManaRefund()
+    {
+        if (_manaRefundApplied || _effects.BronzeManaRefundPct <= 0.0f || !_playerCaster->HasActivePowerType(POWER_MANA))
+            return;
+
+        int32 const castCost = std::max<int32>(0, GetSpell()->GetPowerCost());
+        if (castCost <= 0)
+            return;
+
+        int32 const refund = std::max<int32>(1, int32(std::lround(float(castCost) * (_effects.BronzeManaRefundPct / 100.0f))));
+        _playerCaster->ModifyPower(POWER_MANA, refund);
+        _manaRefundApplied = true;
+    }
+
+    void TryApplySilverSplash(Unit* primaryTarget, int32 hitDamage)
+    {
+        if (!primaryTarget || hitDamage <= 0 || _effects.SilverSplashDamagePct <= 0.0f)
+            return;
+
+        int32 const splashDamage = std::max<int32>(1, int32(std::lround(float(hitDamage) * (_effects.SilverSplashDamagePct / 100.0f))));
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(primaryTarget, _playerCaster, SHADOW_BOLT_SILVER_SPLASH_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(primaryTarget, nearbyUnits, check);
+        Cell::VisitObjects(primaryTarget, searcher, SHADOW_BOLT_SILVER_SPLASH_RADIUS);
+
+        for (Unit* candidate : nearbyUnits)
+        {
+            if (!candidate || candidate == primaryTarget || !_playerCaster->IsValidAttackTarget(candidate) || !candidate->IsAlive())
+                continue;
+
+            SpellNonMeleeDamage splashInfo(_playerCaster, candidate, GetSpellInfo(), GetSpellInfo()->SchoolMask);
+            splashInfo.damage = splashDamage;
+            _playerCaster->SendSpellNonMeleeDamageLog(&splashInfo);
+            _playerCaster->DealSpellDamage(&splashInfo, false);
+        }
+    }
+
+    void TryApplyGoldDot(Unit* target, int32 hitDamage)
+    {
+        if (!target || hitDamage <= 0 || _effects.GoldDotPerTickPct <= 0.0f)
+            return;
+
+        int32 const dotPerTick = std::max<int32>(1, int32(std::lround(float(hitDamage) * (_effects.GoldDotPerTickPct / 100.0f))));
+        _playerCaster->CastSpell(target, SpellMastery::SPELL_WARLOCK_CORRUPTION_RANK_1, TRIGGERED_FULL_MASK);
+        if (Aura* corruption = target->GetAura(SpellMastery::SPELL_WARLOCK_CORRUPTION_RANK_1, _playerCaster->GetGUID()))
+        {
+            if (AuraEffect* periodic = corruption->GetEffect(EFFECT_0))
+                periodic->SetAmount(std::max<int32>(periodic->GetAmount(), dotPerTick));
+        }
+    }
+
+    void TryApplyDiamondExtraBolts(Unit* primaryTarget)
+    {
+        if (!primaryTarget || _effects.DiamondExtraTargets == 0 || _isTriggeredCast)
+            return;
+
+        uint8 launched = 0;
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(primaryTarget, _playerCaster, SHADOW_BOLT_DIAMOND_SEARCH_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(primaryTarget, nearbyUnits, check);
+        Cell::VisitObjects(primaryTarget, searcher, SHADOW_BOLT_DIAMOND_SEARCH_RADIUS);
+
+        for (Unit* candidate : nearbyUnits)
+        {
+            if (!candidate || candidate == primaryTarget || !_playerCaster->IsValidAttackTarget(candidate) || !candidate->IsAlive())
+                continue;
+
+            _playerCaster->CastSpell(
+                candidate,
+                _config->AllowedSpellId,
+                TriggerCastFlags(TRIGGERED_IGNORE_GCD | TRIGGERED_IGNORE_CAST_IN_PROGRESS | TRIGGERED_IGNORE_POWER_AND_REAGENT_COST | TRIGGERED_IGNORE_SPELL_AND_CATEGORY_CD | TRIGGERED_CAST_DIRECTLY));
+
+            if (++launched >= _effects.DiamondExtraTargets)
+                break;
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_warl_shadow_bolt_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_warl_shadow_bolt_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    ShadowBoltMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _xpAwarded = false;
+    bool _manaRefundApplied = false;
+    int32 _finalHitDamage = 0;
+};
+
 void AddSC_spell_mastery_warlock()
 {
     RegisterSpellAndAuraScriptPair(spell_warl_haunt_mastery, spell_warl_haunt_mastery_aura);
+    RegisterSpellScript(spell_warl_shadow_bolt_mastery);
 }

@@ -42,10 +42,25 @@ struct VolleyMasteryEffects
     float DiamondBurstDamagePct = 0.0f;
 };
 
+struct SerpentStingMasteryEffects
+{
+    float IronManaRegenPct = 0.0f;
+    float BronzeDamageBonusPct = 0.0f;
+    int32 SilverTickIntervalMs = 0;
+    uint8 GoldSpreadTargets = 0;
+    float GoldSpreadDamagePct = 0.0f;
+    float DiamondDetonationDamagePct = 0.0f;
+};
+
 uint32 constexpr VOLLEY_XP_GUARD_MS = 8000;
 float constexpr VOLLEY_DIAMOND_BURST_RADIUS = 6.0f;
 int32 constexpr VOLLEY_GOLD_BASE_TICK_INTERVAL_MS = 1000;
 int32 constexpr VOLLEY_GOLD_MIN_TICK_INTERVAL_MS = 500;
+uint32 constexpr SERPENT_STING_XP_GUARD_MS = 250;
+int32 constexpr SERPENT_STING_BASE_TICK_INTERVAL_MS = 3000;
+int32 constexpr SERPENT_STING_MIN_TICK_INTERVAL_MS = 1000;
+float constexpr SERPENT_STING_GOLD_SPREAD_RADIUS = 10.0f;
+float constexpr SERPENT_STING_DIAMOND_DETONATION_RADIUS = 10.0f;
 
 VolleyMasteryEffects BuildVolleyMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -79,6 +94,45 @@ VolleyMasteryEffects BuildVolleyMasteryEffects(SpellMastery::SpellMasteryProgres
     // Diamond: add AoE burst damage around each target hit by Volley.
     if (diamondLevel > 0)
         effects.DiamondBurstDamagePct = 20.0f + (float(diamondLevel - 1) * (40.0f / 9.0f)); // 20% -> 60%
+
+    return effects;
+}
+
+SerpentStingMasteryEffects BuildSerpentStingMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    SerpentStingMasteryEffects effects;
+
+    uint8 const ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 const bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    // Iron: mana regeneration on successful Serpent Sting application.
+    if (ironLevel > 0)
+        effects.IronManaRegenPct = float(ironLevel) * 2.0f;
+
+    // Bronze: increase Serpent Sting periodic damage.
+    if (bronzeLevel > 0)
+        effects.BronzeDamageBonusPct = float(bronzeLevel) * 6.0f;
+
+    // Silver: faster tick cadence.
+    if (silverLevel > 0)
+    {
+        int32 const reductionMs = int32(std::lround(float(SERPENT_STING_BASE_TICK_INTERVAL_MS - SERPENT_STING_MIN_TICK_INTERVAL_MS) * (float(silverLevel) / 10.0f)));
+        effects.SilverTickIntervalMs = std::max<int32>(SERPENT_STING_MIN_TICK_INTERVAL_MS, SERPENT_STING_BASE_TICK_INTERVAL_MS - reductionMs);
+    }
+
+    // Gold: spread a portion of each tick to N nearby targets.
+    if (goldLevel > 0)
+    {
+        effects.GoldSpreadTargets = goldLevel;
+        effects.GoldSpreadDamagePct = 20.0f + (float(goldLevel - 1) * (20.0f / 9.0f)); // 20% -> 40%
+    }
+
+    // Diamond: AoE detonation when Serpent Sting expires naturally.
+    if (diamondLevel > 0)
+        effects.DiamondDetonationDamagePct = 60.0f + (float(diamondLevel - 1) * 10.0f); // 60% -> 150%
 
     return effects;
 }
@@ -281,8 +335,198 @@ private:
     VolleyMasteryEffects _effects;
 };
 
+class spell_hun_serpent_sting_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_hun_serpent_sting_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_HUNTER_SERPENT_STING_RANK_1)
+            return false;
+
+        SpellMastery::SpellMasteryProgress const& progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildSerpentStingMasteryEffects(progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+        return true;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, SERPENT_STING_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        if (_effects.IronManaRegenPct <= 0.0f || !_playerCaster->HasActivePowerType(POWER_MANA))
+            return;
+
+        int32 const maxMana = int32(_playerCaster->GetMaxPower(POWER_MANA));
+        if (maxMana <= 0)
+            return;
+
+        int32 const manaRegen = std::max<int32>(1, int32(std::lround(float(maxMana) * (_effects.IronManaRegenPct / 100.0f))));
+        _playerCaster->ModifyPower(POWER_MANA, manaRegen);
+    }
+
+    void Register() override
+    {
+        AfterHit += SpellHitFn(spell_hun_serpent_sting_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SerpentStingMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _xpAwarded = false;
+};
+
+class spell_hun_serpent_sting_mastery_aura : public AuraScript
+{
+    PrepareAuraScript(spell_hun_serpent_sting_mastery_aura);
+
+    bool Load() override
+    {
+        Unit* caster = GetCaster();
+        if (!caster || !caster->IsPlayer() || !GetUnitOwner())
+            return false;
+
+        _playerCaster = caster->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_HUNTER_SERPENT_STING_RANK_1)
+            return false;
+
+        SpellMastery::SpellMasteryProgress const& progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildSerpentStingMasteryEffects(progress, *_config);
+        return true;
+    }
+
+    void CalculatePeriodicDamageAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    {
+        if (!_playerCaster || amount <= 0)
+            return;
+
+        amount = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), amount);
+
+        if (_effects.BronzeDamageBonusPct <= 0.0f)
+            return;
+
+        int32 const scaledAmount = int32(std::lround(float(amount) * (1.0f + (_effects.BronzeDamageBonusPct / 100.0f))));
+        amount = std::max(amount, scaledAmount);
+    }
+
+    void CalculatePeriodicTiming(AuraEffect const* /*aurEff*/, bool& isPeriodic, int32& amplitude)
+    {
+        if (_effects.SilverTickIntervalMs <= 0)
+            return;
+
+        isPeriodic = true;
+        amplitude = _effects.SilverTickIntervalMs;
+    }
+
+    void HandlePeriodicUpdate(AuraEffect* aurEff)
+    {
+        if (!aurEff || _effects.SilverTickIntervalMs <= 0)
+            return;
+
+        if (aurEff->GetPeriodicTimer() > _effects.SilverTickIntervalMs)
+            aurEff->SetPeriodicTimer(_effects.SilverTickIntervalMs);
+    }
+
+    void HandlePeriodicTick(AuraEffect const* aurEff)
+    {
+        if (!_playerCaster || !aurEff || _effects.GoldSpreadTargets == 0 || _effects.GoldSpreadDamagePct <= 0.0f)
+            return;
+
+        Unit* primaryTarget = GetUnitOwner();
+        if (!primaryTarget || !primaryTarget->IsAlive())
+            return;
+
+        int32 const tickDamage = std::max<int32>(1, aurEff->GetAmount());
+        int32 const spreadDamage = std::max<int32>(1, int32(std::lround(float(tickDamage) * (_effects.GoldSpreadDamagePct / 100.0f))));
+
+        uint8 spreadCount = 0;
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(primaryTarget, _playerCaster, SERPENT_STING_GOLD_SPREAD_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(primaryTarget, nearbyUnits, check);
+        Cell::VisitObjects(primaryTarget, searcher, SERPENT_STING_GOLD_SPREAD_RADIUS);
+
+        for (Unit* candidate : nearbyUnits)
+        {
+            if (!candidate || candidate == primaryTarget || !_playerCaster->IsValidAttackTarget(candidate) || !candidate->IsAlive())
+                continue;
+
+            SpellNonMeleeDamage spreadInfo(_playerCaster, candidate, GetSpellInfo(), GetSpellInfo()->SchoolMask);
+            spreadInfo.damage = spreadDamage;
+            _playerCaster->SendSpellNonMeleeDamageLog(&spreadInfo);
+            _playerCaster->DealSpellDamage(&spreadInfo, false);
+
+            if (++spreadCount >= _effects.GoldSpreadTargets)
+                break;
+        }
+    }
+
+    void HandleEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
+    {
+        if (!_playerCaster || !aurEff || _effects.DiamondDetonationDamagePct <= 0.0f)
+            return;
+
+        AuraApplication const* app = GetTargetApplication();
+        if (!app || app->GetRemoveMode() != AURA_REMOVE_BY_EXPIRE)
+            return;
+
+        Unit* primaryTarget = GetUnitOwner();
+        if (!primaryTarget || !_playerCaster->IsValidAttackTarget(primaryTarget))
+            return;
+
+        int32 const tickAmount = std::max<int32>(1, aurEff->GetAmount());
+        int32 const detonationDamage = std::max<int32>(1, int32(std::lround(float(tickAmount) * (_effects.DiamondDetonationDamagePct / 100.0f))));
+
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(primaryTarget, _playerCaster, SERPENT_STING_DIAMOND_DETONATION_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(primaryTarget, nearbyUnits, check);
+        Cell::VisitObjects(primaryTarget, searcher, SERPENT_STING_DIAMOND_DETONATION_RADIUS);
+
+        for (Unit* target : nearbyUnits)
+        {
+            if (!target || !_playerCaster->IsValidAttackTarget(target) || !target->IsAlive())
+                continue;
+
+            SpellNonMeleeDamage detonationInfo(_playerCaster, target, GetSpellInfo(), GetSpellInfo()->SchoolMask);
+            detonationInfo.damage = detonationDamage;
+            _playerCaster->SendSpellNonMeleeDamageLog(&detonationInfo);
+            _playerCaster->DealSpellDamage(&detonationInfo, false);
+        }
+    }
+
+    void Register() override
+    {
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_hun_serpent_sting_mastery_aura::CalculatePeriodicDamageAmount, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
+        DoEffectCalcPeriodic += AuraEffectCalcPeriodicFn(spell_hun_serpent_sting_mastery_aura::CalculatePeriodicTiming, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_hun_serpent_sting_mastery_aura::HandlePeriodicUpdate, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_hun_serpent_sting_mastery_aura::HandlePeriodicTick, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectRemove += AuraEffectRemoveFn(spell_hun_serpent_sting_mastery_aura::HandleEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SerpentStingMasteryEffects _effects;
+};
+
 void AddSC_spell_mastery_hunter()
 {
     RegisterSpellAndAuraScriptPair(spell_hun_volley_mastery, spell_hun_volley_mastery_aura);
     RegisterSpellScript(spell_hun_volley_trigger_mastery);
+    RegisterSpellAndAuraScriptPair(spell_hun_serpent_sting_mastery, spell_hun_serpent_sting_mastery_aura);
 }
