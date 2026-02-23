@@ -37,8 +37,8 @@ struct VolleyMasteryEffects
 {
     float IronDamageBonusPct = 0.0f;
     float BronzeRadiusMultiplier = 1.0f;
-    int32 SilverDurationBonusMs = 0;
-    int32 GoldTickIntervalMs = 0;
+    int32 SilverTickIntervalMs = 0;
+    uint8 GoldSpreadTargets = 0;
     float DiamondBurstDamagePct = 0.0f;
 };
 
@@ -80,16 +80,16 @@ VolleyMasteryEffects BuildVolleyMasteryEffects(SpellMastery::SpellMasteryProgres
     if (bronzeLevel > 0)
         effects.BronzeRadiusMultiplier += 1.5f * (float(bronzeLevel) / 10.0f);
 
-    // Silver: increase Volley duration.
+    // Silver: increase Volley tick rate (faster periodic trigger).
     if (silverLevel > 0)
-        effects.SilverDurationBonusMs = int32(silverLevel) * 1000;
-
-    // Gold: increase Volley tick rate (faster periodic trigger).
-    if (goldLevel > 0)
     {
-        int32 const reductionMs = int32(std::lround(float(VOLLEY_GOLD_BASE_TICK_INTERVAL_MS - VOLLEY_GOLD_MIN_TICK_INTERVAL_MS) * (float(goldLevel) / 10.0f)));
-        effects.GoldTickIntervalMs = std::max<int32>(VOLLEY_GOLD_MIN_TICK_INTERVAL_MS, VOLLEY_GOLD_BASE_TICK_INTERVAL_MS - reductionMs);
+        int32 const reductionMs = int32(std::lround(float(VOLLEY_GOLD_BASE_TICK_INTERVAL_MS - VOLLEY_GOLD_MIN_TICK_INTERVAL_MS) * (float(silverLevel) / 10.0f)));
+        effects.SilverTickIntervalMs = std::max<int32>(VOLLEY_GOLD_MIN_TICK_INTERVAL_MS, VOLLEY_GOLD_BASE_TICK_INTERVAL_MS - reductionMs);
     }
+
+    // Gold: spread Serpent Sting from a stung target to nearby targets.
+    if (goldLevel > 0)
+        effects.GoldSpreadTargets = goldLevel;
 
     // Diamond: add AoE burst damage around each target hit by Volley.
     if (diamondLevel > 0)
@@ -203,25 +203,25 @@ class spell_hun_volley_mastery_aura : public AuraScript
 
     void CalculatePeriodicTiming(AuraEffect const* aurEff, bool& isPeriodic, int32& amplitude)
     {
-        if (_effects.GoldTickIntervalMs <= 0 || !IsVolleyPeriodicTriggerEffect(aurEff))
+        if (_effects.SilverTickIntervalMs <= 0 || !IsVolleyPeriodicTriggerEffect(aurEff))
             return;
 
         isPeriodic = true;
-        amplitude = _effects.GoldTickIntervalMs;
+        amplitude = _effects.SilverTickIntervalMs;
     }
 
     void HandlePeriodicUpdate(AuraEffect* aurEff)
     {
-        if (_effects.GoldTickIntervalMs <= 0 || !aurEff || !IsVolleyPeriodicTriggerEffect(aurEff))
+        if (_effects.SilverTickIntervalMs <= 0 || !aurEff || !IsVolleyPeriodicTriggerEffect(aurEff))
             return;
 
-        if (aurEff->GetPeriodicTimer() > _effects.GoldTickIntervalMs)
-            aurEff->SetPeriodicTimer(_effects.GoldTickIntervalMs);
+        if (aurEff->GetPeriodicTimer() > _effects.SilverTickIntervalMs)
+            aurEff->SetPeriodicTimer(_effects.SilverTickIntervalMs);
     }
 
     void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
-        if (_effects.GoldTickIntervalMs <= 0)
+        if (_effects.SilverTickIntervalMs <= 0)
             return;
 
         Aura* aura = GetAura();
@@ -232,8 +232,8 @@ class spell_hun_volley_mastery_aura : public AuraScript
         {
             if (AuraEffect* periodic = aura->GetEffect(effectIndex))
             {
-                if (IsVolleyPeriodicTriggerEffect(periodic) && periodic->GetPeriodicTimer() > _effects.GoldTickIntervalMs)
-                    periodic->SetPeriodicTimer(_effects.GoldTickIntervalMs);
+                if (IsVolleyPeriodicTriggerEffect(periodic) && periodic->GetPeriodicTimer() > _effects.SilverTickIntervalMs)
+                    periodic->SetPeriodicTimer(_effects.SilverTickIntervalMs);
             }
         }
     }
@@ -296,7 +296,41 @@ class spell_hun_volley_trigger_mastery : public SpellScript
         if (SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, VOLLEY_XP_GUARD_MS))
             SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
 
+        if (!_goldSpreadApplied)
+            _goldSpreadApplied = TryApplyGoldSerpentSpread(target);
+
         TryApplyDiamondBurst(target, hitDamage);
+    }
+
+    bool TryApplyGoldSerpentSpread(Unit* primaryTarget)
+    {
+        if (!primaryTarget || _effects.GoldSpreadTargets == 0)
+            return false;
+
+        if (!primaryTarget->GetAura(SpellMastery::SPELL_HUNTER_SERPENT_STING_RANK_1, _playerCaster->GetGUID()))
+            return false;
+
+        uint8 spreadCount = 0;
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(primaryTarget, _playerCaster, SERPENT_STING_GOLD_SPREAD_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(primaryTarget, nearbyUnits, check);
+        Cell::VisitObjects(primaryTarget, searcher, SERPENT_STING_GOLD_SPREAD_RADIUS);
+
+        for (Unit* spreadTarget : nearbyUnits)
+        {
+            if (!spreadTarget || spreadTarget == primaryTarget || !_playerCaster->IsValidAttackTarget(spreadTarget) || !spreadTarget->IsAlive())
+                continue;
+
+            if (spreadTarget->GetAura(SpellMastery::SPELL_HUNTER_SERPENT_STING_RANK_1, _playerCaster->GetGUID()))
+                continue;
+
+            _playerCaster->CastSpell(spreadTarget, SpellMastery::SPELL_HUNTER_SERPENT_STING_RANK_1, TRIGGERED_FULL_MASK);
+
+            if (++spreadCount >= _effects.GoldSpreadTargets)
+                break;
+        }
+
+        return true;
     }
 
     void TryApplyDiamondBurst(Unit* primaryTarget, int32 hitDamage)
@@ -331,6 +365,7 @@ private:
     Player* _playerCaster = nullptr;
     SpellMastery::ManagedSpellConfig const* _config = nullptr;
     VolleyMasteryEffects _effects;
+    bool _goldSpreadApplied = false;
 };
 
 class spell_hun_serpent_sting_mastery : public SpellScript
