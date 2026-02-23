@@ -65,6 +65,7 @@ uint32 constexpr KILLING_SPREE_BASE_COOLDOWN_MS = 90000;
 uint32 constexpr KILLING_SPREE_SILVER_COOLDOWN_MS = 45000;
 uint32 constexpr FAN_OF_KNIVES_XP_GUARD_MS = 250;
 uint32 constexpr RUPTURE_XP_GUARD_MS = 250;
+int32 constexpr RUPTURE_BASE_TICK_INTERVAL_MS = 2000;
 int32 constexpr RUPTURE_MIN_TICK_INTERVAL_MS = 500;
 
 std::unordered_map<uint32, uint8> KillingSpreePendingDiamondExtra;
@@ -148,10 +149,14 @@ RuptureMasteryEffects BuildRuptureMasteryEffects(SpellMastery::SpellMasteryProgr
     uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     if (totalMasteryLevels > 0)
-        effects.IronDamageBonusPct = float(totalMasteryLevels) * 12.0f;
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 5.0f;
 
     if (bronzeLevel > 0)
-        effects.BronzeTickIntervalMs = RUPTURE_MIN_TICK_INTERVAL_MS;
+    {
+        int32 const intervalRange = RUPTURE_BASE_TICK_INTERVAL_MS - RUPTURE_MIN_TICK_INTERVAL_MS;
+        int32 const reduction = int32((int64(intervalRange) * int64(bronzeLevel)) / 10);
+        effects.BronzeTickIntervalMs = std::max<int32>(RUPTURE_MIN_TICK_INTERVAL_MS, RUPTURE_BASE_TICK_INTERVAL_MS - reduction);
+    }
 
     if (silverLevel > 0)
         effects.SilverHealPctOfTickDamage = float(silverLevel) * 2.0f;
