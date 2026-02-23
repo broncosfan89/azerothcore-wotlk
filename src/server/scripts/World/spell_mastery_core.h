@@ -89,6 +89,7 @@ struct ManagedSpellConfig
 };
 
 inline constexpr uint64 SPELL_MASTERY_XP_PER_HIT = 100;
+inline constexpr uint64 SPELL_MASTERY_XP_MULTIPLIER = 10;
 
 struct SpellMasteryProgress
 {

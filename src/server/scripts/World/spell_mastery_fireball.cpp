@@ -493,6 +493,8 @@ void AddSpellMasteryXp(Player* player, ManagedSpellConfig const& config, uint64 
     if (!xpGain)
         return;
 
+    xpGain *= SPELL_MASTERY_XP_MULTIPLIER;
+
     SpellMasteryProgress progress = GetOrLoadSpellMasteryProgress(player, config);
     progress.Xp += xpGain;
 
