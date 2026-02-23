@@ -53,7 +53,7 @@ struct RuptureMasteryEffects
 {
     float IronDamageBonusPct = 0.0f;
     int32 BronzeTickIntervalMs = 2000;
-    float SilverDamageTakenPct = 0.0f;
+    float SilverHealPctOfTickDamage = 0.0f;
     int32 GoldDurationBonusMs = 0;
     bool DiamondFullDamageAtOneComboPoint = false;
 };
@@ -148,13 +148,13 @@ RuptureMasteryEffects BuildRuptureMasteryEffects(SpellMastery::SpellMasteryProgr
     uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     if (totalMasteryLevels > 0)
-        effects.IronDamageBonusPct = float(totalMasteryLevels) * 25.0f;
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 12.0f;
 
     if (bronzeLevel > 0)
         effects.BronzeTickIntervalMs = RUPTURE_MIN_TICK_INTERVAL_MS;
 
     if (silverLevel > 0)
-        effects.SilverDamageTakenPct = float(silverLevel) * 2.0f;
+        effects.SilverHealPctOfTickDamage = float(silverLevel) * 2.0f;
 
     if (goldLevel > 0)
         effects.GoldDurationBonusMs = int32(goldLevel) * 500;
@@ -385,7 +385,11 @@ class spell_rog_fan_of_knives_mastery : public SpellScript
 
         if (!_comboPointsGranted && _effects.GoldComboPoints > 0)
         {
-            _playerCaster->AddComboPoints(target, int8(_effects.GoldComboPoints));
+            Unit* comboTarget = _playerCaster->GetSelectedUnit();
+            if (!comboTarget || !_playerCaster->IsValidAttackTarget(comboTarget))
+                comboTarget = target;
+
+            _playerCaster->AddComboPoints(comboTarget, int8(_effects.GoldComboPoints));
             _comboPointsGranted = true;
         }
 
@@ -495,7 +499,7 @@ class spell_rog_rupture_mastery_aura : public AuraScript
 
         amount = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), amount);
 
-        float totalBonusPct = _effects.IronDamageBonusPct + _effects.SilverDamageTakenPct;
+        float totalBonusPct = _effects.IronDamageBonusPct;
         if (totalBonusPct > 0.0f)
         {
             int32 const scaledAmount = int32(std::lround(float(amount) * (1.0f + (totalBonusPct / 100.0f))));
@@ -531,6 +535,21 @@ class spell_rog_rupture_mastery_aura : public AuraScript
             aurEff->SetPeriodicTimer(_effects.BronzeTickIntervalMs);
     }
 
+    void HandlePeriodicTick(AuraEffect const* aurEff)
+    {
+        if (!_playerCaster || !aurEff || _effects.SilverHealPctOfTickDamage <= 0.0f || !_playerCaster->IsAlive())
+            return;
+
+        Unit* target = GetTarget();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        int32 const tickDamage = std::max<int32>(1, aurEff->GetAmount());
+        int32 const healAmount = std::max<int32>(1, int32(std::lround((float(tickDamage) * _effects.SilverHealPctOfTickDamage) / 100.0f)));
+        HealInfo healInfo(_playerCaster, _playerCaster, uint32(healAmount), GetSpellInfo(), GetSpellInfo()->GetSchoolMask());
+        _playerCaster->HealBySpell(healInfo);
+    }
+
     void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         if (_playerCaster && _config)
@@ -558,6 +577,7 @@ class spell_rog_rupture_mastery_aura : public AuraScript
         DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_rog_rupture_mastery_aura::CalculatePeriodicDamageAmount, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
         DoEffectCalcPeriodic += AuraEffectCalcPeriodicFn(spell_rog_rupture_mastery_aura::CalculatePeriodicTiming, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
         OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_rog_rupture_mastery_aura::HandlePeriodicUpdate, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_rog_rupture_mastery_aura::HandlePeriodicTick, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
         OnEffectApply += AuraEffectApplyFn(spell_rog_rupture_mastery_aura::HandleEffectApply, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
     }
 
