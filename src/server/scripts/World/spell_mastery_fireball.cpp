@@ -462,6 +462,9 @@ void EnsureHunterInstantLevelOneSpells(Player* player)
 
     if (!player->HasSpell(SPELL_HUNTER_VOLLEY_RANK_1))
         player->learnSpell(SPELL_HUNTER_VOLLEY_RANK_1);
+
+    if (!player->HasSpell(SPELL_HUNTER_SERPENT_STING_RANK_1))
+        player->learnSpell(SPELL_HUNTER_SERPENT_STING_RANK_1);
 }
 
 void EnsureWarlockInstantLevelOneSpells(Player* player)
