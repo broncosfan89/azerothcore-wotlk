@@ -107,14 +107,15 @@ SerpentStingMasteryEffects BuildSerpentStingMasteryEffects(SpellMastery::SpellMa
     uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
     uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     // Iron: mana regeneration on successful Serpent Sting application.
     if (ironLevel > 0)
         effects.IronManaRegenPct = float(ironLevel) * 2.0f;
 
-    // Bronze: increase Serpent Sting periodic damage.
-    if (bronzeLevel > 0)
-        effects.BronzeDamageBonusPct = float(bronzeLevel) * 6.0f;
+    // Damage scaling follows full mastery progression (Iron -> Diamond).
+    if (totalMasteryLevels > 0)
+        effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 6.0f;
 
     // Silver: faster tick cadence.
     if (silverLevel > 0)
@@ -166,13 +167,6 @@ class spell_hun_volley_mastery : public SpellScript
 
         if (_effects.BronzeRadiusMultiplier > 1.0f)
             GetSpell()->SetSpellValue(SPELLVALUE_RADIUS_MOD, int32(std::lround(_effects.BronzeRadiusMultiplier * 10000.0f)));
-
-        if (_effects.SilverDurationBonusMs > 0)
-        {
-            int32 const baseDuration = GetSpellInfo()->GetMaxDuration();
-            if (baseDuration > 0)
-                GetSpell()->SetSpellValue(SPELLVALUE_AURA_DURATION, baseDuration + _effects.SilverDurationBonusMs);
-        }
 
         return true;
     }
@@ -246,9 +240,9 @@ class spell_hun_volley_mastery_aura : public AuraScript
 
     void Register() override
     {
-        DoEffectCalcPeriodic += AuraEffectCalcPeriodicFn(spell_hun_volley_mastery_aura::CalculatePeriodicTiming, EFFECT_ALL, SPELL_AURA_ANY);
-        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_hun_volley_mastery_aura::HandlePeriodicUpdate, EFFECT_ALL, SPELL_AURA_ANY);
-        OnEffectApply += AuraEffectApplyFn(spell_hun_volley_mastery_aura::HandleEffectApply, EFFECT_ALL, SPELL_AURA_ANY, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+        DoEffectCalcPeriodic += AuraEffectCalcPeriodicFn(spell_hun_volley_mastery_aura::CalculatePeriodicTiming, EFFECT_ALL, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_hun_volley_mastery_aura::HandlePeriodicUpdate, EFFECT_ALL, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+        OnEffectApply += AuraEffectApplyFn(spell_hun_volley_mastery_aura::HandleEffectApply, EFFECT_ALL, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
     }
 
 private:
@@ -273,6 +267,10 @@ class spell_hun_volley_trigger_mastery : public SpellScript
 
         SpellMastery::SpellMasteryProgress const& progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
         _effects = BuildVolleyMasteryEffects(progress, *_config);
+
+        if (_effects.BronzeRadiusMultiplier > 1.0f)
+            GetSpell()->SetSpellValue(SPELLVALUE_RADIUS_MOD, int32(std::lround(_effects.BronzeRadiusMultiplier * 10000.0f)));
+
         return true;
     }
 
