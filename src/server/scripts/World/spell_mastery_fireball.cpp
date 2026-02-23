@@ -39,7 +39,7 @@ namespace SpellMastery
 std::array<ManagedSpellConfig, 19> const ManagedSpellConfigs =
 { {
     { SPELL_MAGE_FIREBALL_RANK_1, SPELL_MAGE_FIREBALL_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
-    { SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MAGE_PYROBLAST_RANK_10, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_FLAMESTRIKE_RANK_1, SPELL_MAGE_FLAMESTRIKE_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1, SPELL_SHAMAN_CHAIN_LIGHTNING_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_SHAMAN_LAVA_BURST_RANK_1, SPELL_SHAMAN_LAVA_BURST_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -419,6 +419,15 @@ void EnsureShamanInstantLevelOneSpells(Player* player)
         player->learnSpell(SPELL_SHAMAN_LAVA_BURST_RANK_1);
 }
 
+void EnsureMageInstantLevelOneSpells(Player* player)
+{
+    if (!player || player->getClass() != CLASS_MAGE || player->GetLevel() < 1)
+        return;
+
+    if (!player->HasSpell(SPELL_MAGE_PYROBLAST_RANK_1))
+        player->learnSpell(SPELL_MAGE_PYROBLAST_RANK_1);
+}
+
 void EnsurePaladinInstantLevelOneSpells(Player* player)
 {
     if (!player || player->getClass() != CLASS_PALADIN || player->GetLevel() < 1)
@@ -552,6 +561,7 @@ public:
             return;
 
         SpellMastery::EnsureShamanInstantLevelOneSpells(player);
+        SpellMastery::EnsureMageInstantLevelOneSpells(player);
         SpellMastery::EnsurePaladinInstantLevelOneSpells(player);
         SpellMastery::EnsurePriestInstantLevelOneSpells(player);
         SpellMastery::EnsureDruidInstantLevelOneSpells(player);
@@ -573,6 +583,7 @@ public:
             return;
 
         SpellMastery::EnsureShamanInstantLevelOneSpells(player);
+        SpellMastery::EnsureMageInstantLevelOneSpells(player);
         SpellMastery::EnsurePaladinInstantLevelOneSpells(player);
         SpellMastery::EnsurePriestInstantLevelOneSpells(player);
         SpellMastery::EnsureDruidInstantLevelOneSpells(player);
