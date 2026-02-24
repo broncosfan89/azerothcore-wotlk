@@ -296,16 +296,16 @@ RipMasteryEffects BuildRipMasteryEffects(SpellMastery::SpellMasteryProgress cons
     uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     if (totalMasteryLevels > 0)
-        effects.IronDamageBonusPct = float(totalMasteryLevels) * 25.0f;
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 8.0f;
 
     if (bronzeLevel > 0)
         effects.BronzeTickIntervalMs = RIP_MIN_TICK_INTERVAL_MS;
 
     if (silverLevel > 0)
-        effects.SilverDamageTakenPct = float(silverLevel) * 2.0f;
+        effects.SilverDamageTakenPct = float(silverLevel) * 1.0f;
 
     if (goldLevel > 0)
-        effects.GoldDurationBonusMs = int32(goldLevel) * 500;
+        effects.GoldDurationBonusMs = int32(goldLevel) * 250;
 
     effects.DiamondFullDamageAtOneComboPoint = diamondLevel > 0;
     return effects;
