@@ -124,7 +124,7 @@ ShadowBoltMasteryEffects BuildShadowBoltMasteryEffects(SpellMastery::SpellMaster
 
     // Gold: apply a scaling Shadow DoT.
     if (goldLevel > 0)
-        effects.GoldDotPerTickPct = 8.0f + (float(goldLevel - 1) * (20.0f / 9.0f)); // 8% -> 28%
+        effects.GoldDotPerTickPct = 1.0f + (float(goldLevel - 1) * 0.5f); // 1.0% -> 5.5%
 
     // Diamond: hit additional nearby targets.
     if (diamondLevel > 0)
@@ -187,7 +187,8 @@ void ApplyStackingShadowBoltGoldDot(Player* caster, Unit* target, int32 addPerTi
     int32 previousTickAmount = currentCorruptionEffect ? std::max<int32>(0, currentCorruptionEffect->GetAmount()) : 0;
     int32 priorMaxDuration = currentCorruptionAura ? std::max(currentCorruptionAura->GetMaxDuration(), SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS) : SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS;
     int32 priorDuration = currentCorruptionAura ? std::max(currentCorruptionAura->GetDuration(), SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS) : SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS;
-    int32 const stackedPerTick = std::max<int32>(1, previousTickAmount + addPerTick);
+    int32 const perTickFromHit = std::max<int32>(1, addPerTick);
+    int32 const stackedPerTick = std::max<int32>(1, previousTickAmount + perTickFromHit);
 
     uint32 corruptionSpellId = currentCorruptionAura ? currentCorruptionAura->GetId() : SpellMastery::SPELL_WARLOCK_CORRUPTION_RANK_1;
     caster->CastCustomSpell(
