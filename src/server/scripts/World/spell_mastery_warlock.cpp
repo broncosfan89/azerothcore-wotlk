@@ -61,6 +61,10 @@ float constexpr SHADOW_BOLT_SILVER_SPLASH_RADIUS = 8.0f;
 float constexpr SHADOW_BOLT_DIAMOND_SEARCH_RADIUS = 25.0f;
 float constexpr SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_PER_LEVEL = 0.30f;
 float constexpr SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_MAX_MULTIPLIER = 25.0f;
+int32 constexpr SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS = 6000;
+int32 constexpr SHADOW_BOLT_GOLD_DOT_DURATION_EXTEND_MS = 1000;
+int32 constexpr SHADOW_BOLT_GOLD_DOT_DURATION_CAP_MS = 20000;
+int32 constexpr SHADOW_BOLT_GOLD_DOT_FAST_TICK_INTERVAL_MS = 500;
 
 HauntMasteryEffects BuildHauntMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -104,10 +108,11 @@ ShadowBoltMasteryEffects BuildShadowBoltMasteryEffects(SpellMastery::SpellMaster
     uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
     uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
-    // Iron: increase Shadow Bolt direct damage.
-    if (ironLevel > 0)
-        effects.IronDamageBonusPct = float(ironLevel) * 8.0f;
+    // Global output ramp: each mastery level contributes to Shadow Bolt direct damage.
+    if (totalMasteryLevels > 0)
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 8.0f;
 
     // Bronze: reduce mana cost by refunding part of cast power cost.
     if (bronzeLevel > 0)
@@ -169,6 +174,47 @@ int32 ApplyShadowBoltLowRankLevelFloor(Player* player, SpellInfo const* spellInf
     float const multiplier = std::clamp(1.0f + (float(levelGap) * SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_PER_LEVEL), 1.0f, SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_MAX_MULTIPLIER);
     int32 const scaledAmount = int32(std::lround(float(amount) * multiplier));
     return std::max(amount, scaledAmount);
+}
+
+void ApplyStackingShadowBoltGoldDot(Player* caster, Unit* target, int32 addPerTick)
+{
+    if (!caster || !target || addPerTick <= 0)
+        return;
+
+    Aura* currentCorruptionAura = target->GetAuraOfRankedSpell(SpellMastery::SPELL_WARLOCK_CORRUPTION_RANK_1, caster->GetGUID());
+    AuraEffect* currentCorruptionEffect = currentCorruptionAura ? currentCorruptionAura->GetEffect(EFFECT_0) : nullptr;
+
+    int32 previousTickAmount = currentCorruptionEffect ? std::max<int32>(0, currentCorruptionEffect->GetAmount()) : 0;
+    int32 priorMaxDuration = currentCorruptionAura ? std::max(currentCorruptionAura->GetMaxDuration(), SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS) : SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS;
+    int32 priorDuration = currentCorruptionAura ? std::max(currentCorruptionAura->GetDuration(), SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS) : SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS;
+    int32 const stackedPerTick = std::max<int32>(1, previousTickAmount + addPerTick);
+
+    uint32 corruptionSpellId = currentCorruptionAura ? currentCorruptionAura->GetId() : SpellMastery::SPELL_WARLOCK_CORRUPTION_RANK_1;
+    caster->CastCustomSpell(
+        corruptionSpellId,
+        SPELLVALUE_BASE_POINT0,
+        stackedPerTick,
+        target,
+        TriggerCastFlags(TRIGGERED_FULL_MASK & ~TRIGGERED_NO_PERIODIC_RESET),
+        nullptr,
+        currentCorruptionEffect,
+        caster->GetGUID());
+
+    Aura* refreshedCorruptionAura = target->GetAuraOfRankedSpell(SpellMastery::SPELL_WARLOCK_CORRUPTION_RANK_1, caster->GetGUID());
+    if (!refreshedCorruptionAura)
+        return;
+
+    int32 const nextMaxDuration = std::min<int32>(SHADOW_BOLT_GOLD_DOT_DURATION_CAP_MS, priorMaxDuration + SHADOW_BOLT_GOLD_DOT_DURATION_EXTEND_MS);
+    int32 const nextDuration = std::min<int32>(nextMaxDuration, priorDuration + SHADOW_BOLT_GOLD_DOT_DURATION_EXTEND_MS);
+    refreshedCorruptionAura->SetMaxDuration(nextMaxDuration);
+    refreshedCorruptionAura->SetDuration(nextDuration);
+
+    if (AuraEffect* refreshedEffect = refreshedCorruptionAura->GetEffect(EFFECT_0))
+    {
+        refreshedEffect->SetAmount(std::max<int32>(refreshedEffect->GetAmount(), stackedPerTick));
+        if (refreshedEffect->GetPeriodicTimer() > SHADOW_BOLT_GOLD_DOT_FAST_TICK_INTERVAL_MS)
+            refreshedEffect->SetPeriodicTimer(SHADOW_BOLT_GOLD_DOT_FAST_TICK_INTERVAL_MS);
+    }
 }
 }
 
@@ -457,12 +503,7 @@ class spell_warl_shadow_bolt_mastery : public SpellScript
             return;
 
         int32 const dotPerTick = std::max<int32>(1, int32(std::lround(float(hitDamage) * (_effects.GoldDotPerTickPct / 100.0f))));
-        _playerCaster->CastSpell(target, SpellMastery::SPELL_WARLOCK_CORRUPTION_RANK_1, TRIGGERED_FULL_MASK);
-        if (Aura* corruption = target->GetAura(SpellMastery::SPELL_WARLOCK_CORRUPTION_RANK_1, _playerCaster->GetGUID()))
-        {
-            if (AuraEffect* periodic = corruption->GetEffect(EFFECT_0))
-                periodic->SetAmount(std::max<int32>(periodic->GetAmount(), dotPerTick));
-        }
+        ApplyStackingShadowBoltGoldDot(_playerCaster, target, dotPerTick);
     }
 
     void TryApplyDiamondExtraBolts(Unit* primaryTarget)
