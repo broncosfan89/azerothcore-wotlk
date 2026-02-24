@@ -36,6 +36,7 @@ public:
         static ChatCommandTable instanceCommandTable =
         {
             { "listbinds",    HandleInstanceListBindsCommand,    SEC_MODERATOR,     Console::No },
+            { "resetheroic",  HandleInstanceResetHeroicCommand,  SEC_PLAYER,        Console::No },
             { "unbind",       HandleInstanceUnbindCommand,       SEC_GAMEMASTER,    Console::No },
             { "stats",        HandleInstanceStatsCommand,        SEC_MODERATOR,     Console::Yes },
             { "savedata",     HandleInstanceSaveDataCommand,     SEC_ADMINISTRATOR, Console::No },
@@ -75,6 +76,32 @@ public:
 
         handler->PSendSysMessage("player binds: {}", counter);
 
+        return true;
+    }
+
+    static bool HandleInstanceResetHeroicCommand(ChatHandler* handler)
+    {
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+
+        if (player->GetMap() && player->GetMap()->IsDungeon())
+        {
+            handler->SendErrorMessage("Leave the dungeon before using .instance resetheroic.");
+            return false;
+        }
+
+        uint16 counter = 0;
+        BoundInstancesMap const& heroicBinds = sInstanceSaveMgr->PlayerGetBoundInstances(player->GetGUID(), DUNGEON_DIFFICULTY_HEROIC);
+        for (BoundInstancesMap::const_iterator itr = heroicBinds.begin(); itr != heroicBinds.end();)
+        {
+            uint16 const mapId = itr->first;
+            sInstanceSaveMgr->PlayerUnbindInstance(player->GetGUID(), mapId, DUNGEON_DIFFICULTY_HEROIC, true, player);
+            itr = heroicBinds.begin();
+            ++counter;
+        }
+
+        handler->PSendSysMessage("Heroic/Mythic instance binds removed: {}", counter);
         return true;
     }
 

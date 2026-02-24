@@ -16,16 +16,33 @@
  */
 
 #include "InstanceMapScript.h"
+#include "Config.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "utgarde_keep.h"
 
+#include <algorithm>
+#include <cmath>
+
+namespace
+{
+uint32 constexpr ITEM_EMBLEM_OF_CONQUEST = 45624;
+uint32 constexpr ITEM_EMBLEM_OF_TRIUMPH = 47241;
+
+bool IsMythicLootBossEntry(uint32 entry)
+{
+    return entry == NPC_KELESETH || entry == NPC_INGVAR || entry == NPC_SKARVALD || entry == NPC_DALRONN;
+}
+}
+
 ObjectData const creatureData[] =
 {
+    { NPC_KELESETH,           DATA_KELESETH           },
     { NPC_DALRONN,            DATA_DALRONN            },
     { NPC_SKARVALD,           DATA_SKARVALD           },
     { NPC_DALRONN_GHOST,      DATA_DALRONN_GHOST      },
     { NPC_SKARVALD_GHOST,     DATA_SKARVALD_GHOST     },
+    { NPC_INGVAR,             DATA_INGVAR             },
     { NPC_DARK_RANGER_MARRAH, DATA_DARK_RANGER_MARRAH },
     { 0,                      0                       }
 };
@@ -52,6 +69,14 @@ public:
         uint32 m_auiEncounter[MAX_ENCOUNTER];
         uint32 ForgeEventMask;
         std::string str_data;
+        bool MythicEnabled;
+        uint8 MythicLevel;
+        float MythicHealthMultiplier;
+        float MythicDamageMultiplier;
+        uint8 MythicRewardUpgradeLevel;
+        uint32 MythicRewardBaseCount;
+        uint32 MythicRewardPerLevelDivisor;
+        bool MythicRewardGranted[MAX_ENCOUNTER];
 
         ObjectGuid GO_ForgeBellowGUID[3];
         ObjectGuid GO_ForgeFireGUID[3];
@@ -65,8 +90,33 @@ public:
         {
             memset(&m_auiEncounter, 0, sizeof(m_auiEncounter));
             ForgeEventMask = 0;
+            memset(&MythicRewardGranted, 0, sizeof(MythicRewardGranted));
 
             bRocksAchiev = true;
+
+            MythicEnabled = false;
+            MythicLevel = 0;
+            MythicHealthMultiplier = 1.0f;
+            MythicDamageMultiplier = 1.0f;
+            MythicRewardUpgradeLevel = uint8(sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.RewardUpgradeLevel", 5));
+            MythicRewardBaseCount = std::max<uint32>(1, sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.RewardBaseCount", 1));
+            MythicRewardPerLevelDivisor = std::max<uint32>(1, sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.RewardPerLevelDivisor", 2));
+
+            if (instance && instance->IsHeroic() && sConfigMgr->GetOption<bool>("Custom.MythicUtgardeKeep.Enable", false))
+            {
+                uint32 const maxLevel = std::max<uint32>(0, sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.MaxLevel", 20));
+                uint32 const configuredLevel = sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.Level", 0);
+                MythicLevel = uint8(std::min<uint32>(maxLevel, configuredLevel));
+
+                float const healthM0 = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.HealthMultiplierM0", 1.30f);
+                float const healthPerLevel = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.HealthMultiplierPerLevel", 0.15f);
+                float const damageM0 = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.DamageMultiplierM0", 1.15f);
+                float const damagePerLevel = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.DamageMultiplierPerLevel", 0.10f);
+
+                MythicHealthMultiplier = std::max(1.0f, healthM0 + (healthPerLevel * float(MythicLevel)));
+                MythicDamageMultiplier = std::max(1.0f, damageM0 + (damagePerLevel * float(MythicLevel)));
+                MythicEnabled = true;
+            }
         }
 
         bool IsEncounterInProgress() const override
@@ -88,6 +138,28 @@ public:
             if (type == DATA_KELESETH && state == NOT_STARTED)
                 bRocksAchiev = true;
 
+            if (MythicEnabled && state == DONE && type < MAX_ENCOUNTER && !MythicRewardGranted[type])
+            {
+                uint32 rewardItemId = (MythicLevel >= MythicRewardUpgradeLevel) ? ITEM_EMBLEM_OF_TRIUMPH : ITEM_EMBLEM_OF_CONQUEST;
+                uint32 rewardCount = MythicRewardBaseCount + (uint32(MythicLevel) / MythicRewardPerLevelDivisor);
+                if (type == DATA_INGVAR)
+                    ++rewardCount;
+
+                Map::PlayerList const& players = instance->GetPlayers();
+                for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                {
+                    Player* player = itr->GetSource();
+                    if (!player)
+                        continue;
+
+                    player->AddItem(rewardItemId, rewardCount);
+                    if (player->GetSession())
+                        player->GetSession()->SendAreaTriggerMessage("Mythic {} reward: item {} x{}.", uint32(MythicLevel), rewardItemId, rewardCount);
+                }
+
+                MythicRewardGranted[type] = true;
+            }
+
             return true;
         }
 
@@ -107,10 +179,46 @@ public:
                     c->SetVisible(false);
                 }
             }
+
+            if (MythicEnabled && plr && plr->GetSession())
+                plr->GetSession()->SendAreaTriggerMessage("Utgarde Keep Mythic {} active (HP x{:.2f}, Damage x{:.2f}).", uint32(MythicLevel), MythicHealthMultiplier, MythicDamageMultiplier);
         }
 
         void OnCreatureCreate(Creature* creature) override
         {
+            if (MythicEnabled && creature && creature->IsHostileToPlayers() && !creature->IsTrigger() && !creature->IsTotem())
+            {
+                if (IsMythicLootBossEntry(creature->GetEntry()))
+                    creature->SetLootMode(LOOT_MODE_HARD_MODE_1);
+                else
+                    creature->SetLootMode(0);
+
+                uint32 const currentMaxHealth = creature->GetMaxHealth();
+                if (currentMaxHealth > 0)
+                {
+                    uint32 const scaledMaxHealth = std::max<uint32>(1, uint32(std::lround(float(currentMaxHealth) * MythicHealthMultiplier)));
+                    creature->SetMaxHealth(scaledMaxHealth);
+                    if (creature->IsAlive())
+                        creature->SetHealth(scaledMaxHealth);
+                }
+
+                auto scaleAttackDamage = [this, creature](WeaponAttackType attackType)
+                {
+                    float minDamage = creature->GetWeaponDamageRange(attackType, MINDAMAGE);
+                    float maxDamage = creature->GetWeaponDamageRange(attackType, MAXDAMAGE);
+                    if (minDamage <= 0.0f && maxDamage <= 0.0f)
+                        return;
+
+                    creature->SetBaseWeaponDamage(attackType, MINDAMAGE, std::max(1.0f, minDamage * MythicDamageMultiplier));
+                    creature->SetBaseWeaponDamage(attackType, MAXDAMAGE, std::max(1.0f, maxDamage * MythicDamageMultiplier));
+                    creature->UpdateDamagePhysical(attackType);
+                };
+
+                scaleAttackDamage(BASE_ATTACK);
+                scaleAttackDamage(OFF_ATTACK);
+                scaleAttackDamage(RANGED_ATTACK);
+            }
+
             switch (creature->GetEntry())
             {
                 case NPC_ENSLAVED_PROTO_DRAKE:
@@ -223,7 +331,7 @@ public:
                     if (Creature* c = GetCreature(DATA_SKARVALD))
                     {
                         c->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE | UNIT_DYNFLAG_TAPPED | UNIT_DYNFLAG_TAPPED_BY_PLAYER);
-                        c->SetLootMode(1);
+                        c->SetLootMode(MythicEnabled ? LOOT_MODE_HARD_MODE_1 : LOOT_MODE_DEFAULT);
                         c->loot.clear();
                         if (uint32 lootid = c->GetCreatureTemplate()->lootid)
                             c->loot.FillLoot(lootid, LootTemplates_Creature, c->GetLootRecipient(), false, false, c->GetLootMode(), c);
@@ -238,7 +346,7 @@ public:
                     {
                         c->AI()->DoAction(-1);
                         c->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE | UNIT_DYNFLAG_TAPPED | UNIT_DYNFLAG_TAPPED_BY_PLAYER);
-                        c->SetLootMode(1);
+                        c->SetLootMode(MythicEnabled ? LOOT_MODE_HARD_MODE_1 : LOOT_MODE_DEFAULT);
                         c->loot.clear();
                         if (uint32 lootid = c->GetCreatureTemplate()->lootid)
                             c->loot.FillLoot(lootid, LootTemplates_Creature, c->GetLootRecipient(), false, false, c->GetLootMode(), c);

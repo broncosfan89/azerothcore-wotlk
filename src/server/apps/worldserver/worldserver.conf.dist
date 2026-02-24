@@ -1724,6 +1724,77 @@ PlayerStart.CustomSpells = 0
 Custom.SpellMasteryFeed = 1
 
 #
+#    Custom.MythicUtgardeKeep.Enable
+#        Description: Enable custom Mythic difficulty scaling/rewards for Utgarde Keep heroic.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+
+Custom.MythicUtgardeKeep.Enable = 0
+
+#
+#    Custom.MythicUtgardeKeep.Level
+#        Description: Mythic level for Utgarde Keep. 0 = Mythic 0.
+#        Default:     0
+
+Custom.MythicUtgardeKeep.Level = 0
+
+#
+#    Custom.MythicUtgardeKeep.MaxLevel
+#        Description: Maximum allowed Mythic level clamp.
+#        Default:     20
+
+Custom.MythicUtgardeKeep.MaxLevel = 20
+
+#
+#    Custom.MythicUtgardeKeep.HealthMultiplierM0
+#        Description: Creature health multiplier at Mythic 0.
+#        Default:     1.30
+
+Custom.MythicUtgardeKeep.HealthMultiplierM0 = 1.30
+
+#
+#    Custom.MythicUtgardeKeep.HealthMultiplierPerLevel
+#        Description: Additional creature health multiplier added per Mythic level.
+#        Default:     0.15
+
+Custom.MythicUtgardeKeep.HealthMultiplierPerLevel = 0.15
+
+#
+#    Custom.MythicUtgardeKeep.DamageMultiplierM0
+#        Description: Creature weapon damage multiplier at Mythic 0.
+#        Default:     1.15
+
+Custom.MythicUtgardeKeep.DamageMultiplierM0 = 1.15
+
+#
+#    Custom.MythicUtgardeKeep.DamageMultiplierPerLevel
+#        Description: Additional creature weapon damage multiplier added per Mythic level.
+#        Default:     0.10
+
+Custom.MythicUtgardeKeep.DamageMultiplierPerLevel = 0.10
+
+#
+#    Custom.MythicUtgardeKeep.RewardUpgradeLevel
+#        Description: Mythic level at which rewards upgrade from Conquest emblems to Triumph emblems.
+#        Default:     5
+
+Custom.MythicUtgardeKeep.RewardUpgradeLevel = 5
+
+#
+#    Custom.MythicUtgardeKeep.RewardBaseCount
+#        Description: Base reward count per boss at Mythic level 0.
+#        Default:     1
+
+Custom.MythicUtgardeKeep.RewardBaseCount = 1
+
+#
+#    Custom.MythicUtgardeKeep.RewardPerLevelDivisor
+#        Description: Extra rewards gained as (MythicLevel / divisor).
+#        Default:     2
+
+Custom.MythicUtgardeKeep.RewardPerLevelDivisor = 2
+
+#
 #    PlayerStart.MapsExplored
 #        Description: Characters start with all maps explored.
 #        Default:     0 - (Disabled)
