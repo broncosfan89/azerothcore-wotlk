@@ -99,11 +99,12 @@ void WorldSession::HandleSwapInvItemOpcode(WorldPackets::Item::SwapInventoryItem
 
 void WorldSession::HandleAutoEquipItemSlotOpcode(WorldPackets::Item::AutoEquipItemSlot& packet)
 {
+    Item* item = _player->GetItemByGuid(packet.ItemGuid);
+
     // cheating attempt, client should never send opcode in that case
     if (!Player::IsEquipmentPos(INVENTORY_SLOT_BAG_0, packet.DestinationSlot))
         return;
 
-    Item* item = _player->GetItemByGuid(packet.ItemGuid);
     uint16 dstpos = packet.DestinationSlot | (INVENTORY_SLOT_BAG_0 << 8);
 
     if (!item || item->GetPos() == dstpos)
@@ -165,6 +166,8 @@ void WorldSession::HandleAutoEquipItemOpcode(WorldPackets::Item::AutoEquipItem& 
         return;
     }
 
+    bool const isTrackedMythicItem = (pProto->ItemId >= 59001 && pProto->ItemId <= 59009) || (pProto->ItemId >= 980001 && pProto->ItemId <= 980999);
+
     uint8 eslot = _player->FindEquipSlot(pProto, NULL_SLOT, !pSrcItem->IsBag());
     if (eslot == NULL_SLOT)
     {
@@ -174,6 +177,15 @@ void WorldSession::HandleAutoEquipItemOpcode(WorldPackets::Item::AutoEquipItem& 
 
     uint16 src = pSrcItem->GetPos();
     uint16 dest = ((INVENTORY_SLOT_BAG_0 << 8) | eslot);
+
+    // Keep mythic custom entries on the same packet/update path as drag-and-drop swaps.
+    // This avoids client-side stale bag visuals observed with auto-equip flow.
+    if (isTrackedMythicItem)
+    {
+        _player->SwapItem(src, dest);
+        return;
+    }
+
     if (dest == src) // prevent equip in same slot, only at cheat
     {
         _player->SendEquipError(EQUIP_ERR_ITEM_CANT_BE_EQUIPPED, pSrcItem);

@@ -40,23 +40,23 @@ bool IsMythicLootBossEntry(uint32 entry)
 
 std::array<uint32, 3> constexpr ITEM_POOL_KELESETH_M0 =
 {
-    980001,
-    980002,
-    980003
+    59001,
+    59002,
+    59003
 };
 
 std::array<uint32, 3> constexpr ITEM_POOL_SKARVALD_DALRONN_M0 =
 {
-    980004,
-    980005,
-    980006
+    59004,
+    59005,
+    59006
 };
 
 std::array<uint32, 3> constexpr ITEM_POOL_INGVAR_M0 =
 {
-    980007,
-    980008,
-    980009
+    59007,
+    59008,
+    59009
 };
 
 uint32 GetRandomMythicUtgardeItemForDataId(uint32 dataId)
@@ -191,6 +191,14 @@ public:
 
             if (creature->GetLootMode())
                 creature->loot.generateMoneyLoot(creature->GetCreatureTemplate()->mingold, creature->GetCreatureTemplate()->maxgold);
+
+            // Filter out invalid entries (e.g. item 0) that can appear as '?' and are not equipable.
+            creature->loot.items.erase(
+                std::remove_if(creature->loot.items.begin(), creature->loot.items.end(), [](LootItem const& lootItem)
+                {
+                    return lootItem.itemid == 0 || !sObjectMgr->GetItemTemplate(lootItem.itemid);
+                }),
+                creature->loot.items.end());
 
             bool hasValidLootItem = false;
             for (LootItem const& lootItem : creature->loot.items)

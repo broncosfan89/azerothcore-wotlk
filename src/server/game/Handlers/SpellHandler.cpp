@@ -85,6 +85,33 @@ void WorldSession::HandleUseItemOpcode(WorldPacket& recvPacket)
         return;
     }
 
+    ItemTemplate const* earlyProto = pItem->GetTemplate();
+    if (earlyProto)
+    {
+        uint32 const earlyEntry = pItem->GetEntry();
+        bool const isTrackedMythic = (earlyEntry >= 59001 && earlyEntry <= 59009) || (earlyEntry >= 980001 && earlyEntry <= 980999);
+        if (isTrackedMythic && earlyProto->InventoryType != INVTYPE_NON_EQUIP && !pItem->IsEquipped())
+        {
+            if (pItem->GetGUID() != itemGUID)
+            {
+                pUser->SendEquipError(EQUIP_ERR_ITEM_NOT_FOUND, nullptr, nullptr);
+                return;
+            }
+
+            uint8 const equipSlot = pUser->FindEquipSlot(earlyProto, NULL_SLOT, !pItem->IsBag());
+            if (equipSlot == NULL_SLOT)
+            {
+                pUser->SendEquipError(EQUIP_ERR_ITEM_CANT_BE_EQUIPPED, pItem);
+                return;
+            }
+
+            uint16 const src = pItem->GetPos();
+            uint16 const dst = (INVENTORY_SLOT_BAG_0 << 8) | equipSlot;
+            pUser->SwapItem(src, dst);
+            return;
+        }
+    }
+
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
 
     if (!spellInfo)
