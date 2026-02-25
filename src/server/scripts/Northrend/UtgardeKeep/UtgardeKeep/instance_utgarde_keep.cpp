@@ -17,10 +17,14 @@
 
 #include "InstanceMapScript.h"
 #include "Config.h"
+#include "Log.h"
+#include "LootMgr.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "utgarde_keep.h"
 
+#include <array>
 #include <algorithm>
 #include <cmath>
 
@@ -32,6 +36,52 @@ uint32 constexpr ITEM_EMBLEM_OF_TRIUMPH = 47241;
 bool IsMythicLootBossEntry(uint32 entry)
 {
     return entry == NPC_KELESETH || entry == NPC_INGVAR || entry == NPC_SKARVALD || entry == NPC_DALRONN;
+}
+
+std::array<uint32, 3> constexpr ITEM_POOL_KELESETH_M0 =
+{
+    980001,
+    980002,
+    980003
+};
+
+std::array<uint32, 3> constexpr ITEM_POOL_SKARVALD_DALRONN_M0 =
+{
+    980004,
+    980005,
+    980006
+};
+
+std::array<uint32, 3> constexpr ITEM_POOL_INGVAR_M0 =
+{
+    980007,
+    980008,
+    980009
+};
+
+uint32 GetRandomMythicUtgardeItemForDataId(uint32 dataId)
+{
+    std::array<uint32, 3> const* pool = nullptr;
+    switch (dataId)
+    {
+        case DATA_KELESETH:
+            pool = &ITEM_POOL_KELESETH_M0;
+            break;
+        case DATA_DALRONN:
+        case DATA_SKARVALD:
+            pool = &ITEM_POOL_SKARVALD_DALRONN_M0;
+            break;
+        case DATA_INGVAR:
+            pool = &ITEM_POOL_INGVAR_M0;
+            break;
+        default:
+            break;
+    }
+
+    if (!pool)
+        return 0;
+
+    return (*pool)[urand(0, uint32(pool->size() - 1))];
 }
 }
 
@@ -86,6 +136,94 @@ public:
         ObjectGuid NPC_SpecialDrakeGUID;
         bool bRocksAchiev;
 
+        void ApplyMythicLootModeToCreature(uint32 dataId)
+        {
+            if (!MythicEnabled)
+                return;
+
+            if (Creature* creature = GetCreature(dataId))
+                creature->SetLootMode(LOOT_MODE_HARD_MODE_1);
+        }
+
+        Player* GetFallbackLootRecipient() const
+        {
+            if (!instance)
+                return nullptr;
+
+            Map::PlayerList const& players = instance->GetPlayers();
+            for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                if (Player* player = itr->GetSource())
+                    return player;
+
+            return nullptr;
+        }
+
+        void RebuildMythicBossLoot(uint32 dataId)
+        {
+            if (!MythicEnabled)
+            {
+                LOG_INFO("scripts", "UK Mythic loot rebuild skipped: dataId {} (mythic disabled)", dataId);
+                return;
+            }
+
+            Creature* creature = GetCreature(dataId);
+            if (!creature || creature->IsAlive())
+            {
+                LOG_INFO("scripts", "UK Mythic loot rebuild skipped: dataId {} creature {} alive {}", dataId, creature ? creature->GetEntry() : 0, creature ? uint32(creature->IsAlive()) : 0);
+                return;
+            }
+
+            creature->SetLootMode(LOOT_MODE_HARD_MODE_1);
+
+            Player* lootRecipient = creature->GetLootRecipient();
+            if (!lootRecipient || !lootRecipient->IsInMap(creature))
+            {
+                lootRecipient = GetFallbackLootRecipient();
+                if (lootRecipient)
+                    creature->SetLootRecipient(lootRecipient);
+            }
+
+            creature->loot.clear();
+            if (uint32 lootid = creature->GetCreatureTemplate()->lootid)
+                creature->loot.FillLoot(lootid, LootTemplates_Creature, lootRecipient, false, false, creature->GetLootMode(), creature);
+            else
+                LOG_INFO("scripts", "UK Mythic loot rebuild warning: boss {} has no lootid", creature->GetEntry());
+
+            if (creature->GetLootMode())
+                creature->loot.generateMoneyLoot(creature->GetCreatureTemplate()->mingold, creature->GetCreatureTemplate()->maxgold);
+
+            bool hasValidLootItem = false;
+            for (LootItem const& lootItem : creature->loot.items)
+            {
+                if (sObjectMgr->GetItemTemplate(lootItem.itemid))
+                {
+                    hasValidLootItem = true;
+                    break;
+                }
+            }
+
+            if (!hasValidLootItem)
+            {
+                if (uint32 forcedItemId = GetRandomMythicUtgardeItemForDataId(dataId))
+                {
+                    LootStoreItem forcedItem(forcedItemId, 0, 100.0f, false, LOOT_MODE_DEFAULT, 0, 1, 1);
+                    creature->loot.AddItem(forcedItem);
+                    LOG_INFO("scripts", "UK Mythic loot rebuild fallback injected item {} for bossEntry {} dataId {}", forcedItemId, creature->GetEntry(), dataId);
+                }
+            }
+
+            std::string const recipientGuid = lootRecipient ? lootRecipient->GetGUID().ToString() : "none";
+            LOG_INFO("scripts", "UK Mythic loot rebuild result: bossEntry {} dataId {} lootMode {} recipient {} items {} gold {} empty {}",
+                creature->GetEntry(), dataId, creature->GetLootMode(), recipientGuid, creature->loot.items.size(), creature->loot.gold, uint32(creature->loot.empty()));
+
+            if (!creature->loot.empty())
+            {
+                creature->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE | UNIT_DYNFLAG_TAPPED | UNIT_DYNFLAG_TAPPED_BY_PLAYER);
+                creature->DestroyForVisiblePlayers();
+                creature->SetVisible(true);
+            }
+        }
+
         void Initialize() override
         {
             memset(&m_auiEncounter, 0, sizeof(m_auiEncounter));
@@ -137,6 +275,29 @@ public:
 
             if (type == DATA_KELESETH && state == NOT_STARTED)
                 bRocksAchiev = true;
+
+            if (MythicEnabled)
+            {
+                switch (type)
+                {
+                    case DATA_KELESETH:
+                        ApplyMythicLootModeToCreature(DATA_KELESETH);
+                        if (state == DONE)
+                            RebuildMythicBossLoot(DATA_KELESETH);
+                        break;
+                    case DATA_DALRONN_AND_SKARVALD:
+                        ApplyMythicLootModeToCreature(DATA_SKARVALD);
+                        ApplyMythicLootModeToCreature(DATA_DALRONN);
+                        break;
+                    case DATA_INGVAR:
+                        ApplyMythicLootModeToCreature(DATA_INGVAR);
+                        if (state == DONE)
+                            RebuildMythicBossLoot(DATA_INGVAR);
+                        break;
+                    default:
+                        break;
+                }
+            }
 
             if (MythicEnabled && state == DONE && type < MAX_ENCOUNTER && !MythicRewardGranted[type])
             {
@@ -323,13 +484,23 @@ public:
                         if (Creature* c = GetCreature(DATA_SKARVALD_GHOST))
                             c->DespawnOrUnsummon();
 
+                        RebuildMythicBossLoot(DATA_SKARVALD);
+                        RebuildMythicBossLoot(DATA_DALRONN);
                     }
 
                     m_auiEncounter[1] = data;
+                    ApplyMythicLootModeToCreature(DATA_SKARVALD);
+                    ApplyMythicLootModeToCreature(DATA_DALRONN);
                     break;
                 case DATA_UNLOCK_SKARVALD_LOOT:
                     if (Creature* c = GetCreature(DATA_SKARVALD))
                     {
+                        if (MythicEnabled)
+                        {
+                            RebuildMythicBossLoot(DATA_SKARVALD);
+                            break;
+                        }
+
                         c->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE | UNIT_DYNFLAG_TAPPED | UNIT_DYNFLAG_TAPPED_BY_PLAYER);
                         c->SetLootMode(MythicEnabled ? LOOT_MODE_HARD_MODE_1 : LOOT_MODE_DEFAULT);
                         c->loot.clear();
@@ -344,6 +515,12 @@ public:
                 case DATA_UNLOCK_DALRONN_LOOT:
                     if (Creature* c = GetCreature(DATA_DALRONN))
                     {
+                        if (MythicEnabled)
+                        {
+                            RebuildMythicBossLoot(DATA_DALRONN);
+                            break;
+                        }
+
                         c->AI()->DoAction(-1);
                         c->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE | UNIT_DYNFLAG_TAPPED | UNIT_DYNFLAG_TAPPED_BY_PLAYER);
                         c->SetLootMode(MythicEnabled ? LOOT_MODE_HARD_MODE_1 : LOOT_MODE_DEFAULT);
@@ -361,6 +538,7 @@ public:
                     {
                         HandleGameObject(GO_PortcullisGUID[0], true);
                         HandleGameObject(GO_PortcullisGUID[1], true);
+                        RebuildMythicBossLoot(DATA_INGVAR);
                     }
                     m_auiEncounter[2] = data;
                     break;
