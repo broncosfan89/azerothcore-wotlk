@@ -3513,7 +3513,8 @@ SpellCastResult Spell::prepare(SpellCastTargets const* targets, AuraEffect const
 
     // don't allow channeled spells / spells with cast time to be casted while moving
     // (even if they are interrupted on moving, spells with almost immediate effect get to have their effect processed before movement interrupter kicks in)
-    if ((m_spellInfo->IsChanneled() || m_casttime) && m_caster->IsPlayer() && m_caster->isMoving() && m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_MOVEMENT && !IsTriggered())
+    bool const spellForcesMoveInterrupt = (m_spellInfo->Id == 770001);
+    if ((m_spellInfo->IsChanneled() || m_casttime) && m_caster->IsPlayer() && m_caster->isMoving() && ((m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_MOVEMENT) || spellForcesMoveInterrupt) && !IsTriggered())
     {
         // 1. Has casttime, 2. Or doesn't have flag to allow action during channel
         if (m_casttime || !m_spellInfo->IsActionAllowedChannel())
@@ -4357,8 +4358,9 @@ void Spell::update(uint32 difftime)
 
     // check if the player caster has moved before the spell finished
     // xinef: added preparing state (real cast, skip channels as they have other flags for this)
+    bool const spellForcesMoveInterrupt = (m_spellInfo->Id == 770001);
     if ((m_caster->IsPlayer() && m_timer != 0) &&
-            m_caster->isMoving() && (m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_MOVEMENT) && m_spellState == SPELL_STATE_PREPARING &&
+            m_caster->isMoving() && ((m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_MOVEMENT) || spellForcesMoveInterrupt) && m_spellState == SPELL_STATE_PREPARING &&
             (m_spellInfo->Effects[0].Effect != SPELL_EFFECT_STUCK || !m_caster->HasUnitMovementFlag(MOVEMENTFLAG_FALLING_FAR)))
     {
         // don't cancel for melee, autorepeat, triggered and instant spells
@@ -7257,7 +7259,8 @@ SpellCastResult Spell::CheckItems()
     {
         // Xinef: this is not true in my opinion, in eg bladestorm will not be canceled after disarm
         //if (!HasTriggeredCastFlag(TRIGGERED_IGNORE_EQUIPPED_ITEM_REQUIREMENT))
-        if (m_caster->IsPlayer() && !m_caster->ToPlayer()->HasItemFitToSpellRequirements(m_spellInfo))
+        // Custom Spell Mastery spell: Volcanic Eruption (770001) is a ground-target spell and should not require equipped weapon class.
+        if (m_spellInfo->Id != 770001 && m_caster->IsPlayer() && !m_caster->ToPlayer()->HasItemFitToSpellRequirements(m_spellInfo))
             return SPELL_FAILED_EQUIPPED_ITEM_CLASS;
     }
 

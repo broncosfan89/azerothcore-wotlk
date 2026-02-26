@@ -12,7 +12,8 @@ import struct
 from typing import Dict, List, Tuple
 
 
-SOURCE_SPELL_ID = 66690
+# Clone from Flamestrike to inherit proper ground-target/cast behavior.
+SOURCE_SPELL_ID = 2120
 TARGET_SPELL_ID = 770001
 TARGET_ICON_ID = 37  # Flamestrike icon
 TARGET_NAME = "Volcanic Eruption"
@@ -25,6 +26,22 @@ RECORD_SIZE = 936
 LOCALE_COUNT = 16
 
 IDX_ID = 0
+IDX_TARGETS = 16
+IDX_CASTING_TIME_INDEX = 28
+IDX_MAX_LEVEL = 37
+IDX_BASE_LEVEL = 38
+IDX_SPELL_LEVEL = 39
+IDX_DURATION_INDEX = 40
+IDX_RANGE_INDEX = 46
+IDX_EQUIPPED_ITEM_CLASS = 68
+IDX_EQUIPPED_ITEM_SUBCLASS_MASK = 69
+IDX_EQUIPPED_ITEM_INVTYPE_MASK = 70
+IDX_EFFECT_1 = 71
+IDX_EFFECT_2 = 72
+IDX_EFFECT_3 = 73
+IDX_EFFECT_RADIUS_1 = 92
+IDX_EFFECT_RADIUS_2 = 93
+IDX_EFFECT_RADIUS_3 = 94
 IDX_SPELL_ICON = 133
 IDX_ACTIVE_ICON = 134
 IDX_NAME_START = 136
@@ -35,6 +52,13 @@ IDX_DESC_START = 170
 IDX_DESC_MASK = 186
 IDX_AURA_DESC_START = 187
 IDX_AURA_DESC_MASK = 203
+IDX_MANA_COST_PCT = 204
+IDX_DMG_CLASS = 213
+IDX_SPELL_VISUAL_1 = 131
+IDX_SPELL_VISUAL_2 = 132
+IDX_SCHOOL_MASK = 225
+IDX_IMPLICIT_TARGET_A_1 = 86
+IDX_IMPLICIT_TARGET_B_1 = 89
 
 
 def parse_args() -> argparse.Namespace:
@@ -98,6 +122,21 @@ def patch_records(records: List[List[int]], original_strings: bytes) -> Tuple[Li
     source_row = by_id[SOURCE_SPELL_ID]
     target_row = source_row.copy()
     target_row[IDX_ID] = TARGET_SPELL_ID
+    # Keep Flamestrike-like cast/target/effect behavior (reticle + direct impact + ground DoT).
+    target_row[IDX_TARGETS] = 64
+    target_row[IDX_CASTING_TIME_INDEX] = 5
+    target_row[IDX_RANGE_INDEX] = 4
+    target_row[IDX_EQUIPPED_ITEM_CLASS] = 0xFFFFFFFF
+    target_row[IDX_EQUIPPED_ITEM_SUBCLASS_MASK] = 0
+    target_row[IDX_EQUIPPED_ITEM_INVTYPE_MASK] = 0
+    target_row[IDX_MAX_LEVEL] = 0
+    target_row[IDX_BASE_LEVEL] = 1
+    target_row[IDX_SPELL_LEVEL] = 1
+    target_row[IDX_MANA_COST_PCT] = 10
+    target_row[IDX_SCHOOL_MASK] = 4   # Fire
+    target_row[IDX_DMG_CLASS] = 1     # Magic
+    target_row[IDX_SPELL_VISUAL_1] = 14151  # Koralon Burning Ground visual
+    target_row[IDX_SPELL_VISUAL_2] = 0
     target_row[IDX_SPELL_ICON] = TARGET_ICON_ID
     target_row[IDX_ACTIVE_ICON] = 0
 

@@ -343,13 +343,6 @@ int32 ScaleVolcanicEruptionDamage(Player* caster, SpellInfo const* spellInfo, in
     return std::max(amount, std::max(scaledByPct, scaledMin));
 }
 
-bool IsVolcanicPeriodicEffect(AuraEffect const* aurEff)
-{
-    if (!aurEff)
-        return false;
-
-    return aurEff->GetAuraType() == SPELL_AURA_PERIODIC_DAMAGE || aurEff->GetAuraType() == SPELL_AURA_PERIODIC_TRIGGER_SPELL;
-}
 }
 
 void ClearSpellMasteryShamanRuntimeStateForPlayer(uint32 guid)
@@ -766,7 +759,7 @@ class spell_sha_volcanic_eruption_damage : public SpellScript
         return _playerCaster && _playerCaster->getClass() == CLASS_SHAMAN;
     }
 
-    void HandleOnHit()
+    void HandleDirectImpact(SpellEffIndex /*effIndex*/)
     {
         Unit* target = GetHitUnit();
         if (!target || !_playerCaster || !_playerCaster->IsValidAttackTarget(target))
@@ -781,7 +774,7 @@ class spell_sha_volcanic_eruption_damage : public SpellScript
 
     void Register() override
     {
-        OnHit += SpellHitFn(spell_sha_volcanic_eruption_damage::HandleOnHit);
+        OnEffectHitTarget += SpellEffectFn(spell_sha_volcanic_eruption_damage::HandleDirectImpact, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
     }
 
 private:
@@ -812,7 +805,7 @@ class spell_sha_volcanic_eruption_damage_aura : public AuraScript
 
     void CalculatePeriodicTiming(AuraEffect const* aurEff, bool& isPeriodic, int32& amplitude)
     {
-        if (!IsVolcanicPeriodicEffect(aurEff))
+        if (!aurEff || aurEff->GetAuraType() != SPELL_AURA_PERIODIC_DAMAGE)
             return;
 
         isPeriodic = true;
@@ -821,7 +814,7 @@ class spell_sha_volcanic_eruption_damage_aura : public AuraScript
 
     void HandlePeriodicUpdate(AuraEffect* aurEff)
     {
-        if (!IsVolcanicPeriodicEffect(aurEff))
+        if (!aurEff || aurEff->GetAuraType() != SPELL_AURA_PERIODIC_DAMAGE)
             return;
 
         if (aurEff->GetPeriodicTimer() > SHAMAN_VOLCANIC_ERUPTION_TICK_MS)
@@ -840,7 +833,7 @@ class spell_sha_volcanic_eruption_damage_aura : public AuraScript
         for (uint8 effectIndex = EFFECT_0; effectIndex < MAX_SPELL_EFFECTS; ++effectIndex)
         {
             AuraEffect* effect = aura->GetEffect(effectIndex);
-            if (!IsVolcanicPeriodicEffect(effect))
+            if (!effect || effect->GetAuraType() != SPELL_AURA_PERIODIC_DAMAGE)
                 continue;
 
             if (effect->GetPeriodicTimer() > SHAMAN_VOLCANIC_ERUPTION_TICK_MS)
@@ -850,13 +843,10 @@ class spell_sha_volcanic_eruption_damage_aura : public AuraScript
 
     void Register() override
     {
-        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_sha_volcanic_eruption_damage_aura::CalculatePeriodicDamageAmount, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
-        DoEffectCalcPeriodic += AuraEffectCalcPeriodicFn(spell_sha_volcanic_eruption_damage_aura::CalculatePeriodicTiming, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
-        DoEffectCalcPeriodic += AuraEffectCalcPeriodicFn(spell_sha_volcanic_eruption_damage_aura::CalculatePeriodicTiming, EFFECT_ALL, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
-        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_sha_volcanic_eruption_damage_aura::HandlePeriodicUpdate, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
-        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_sha_volcanic_eruption_damage_aura::HandlePeriodicUpdate, EFFECT_ALL, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
-        OnEffectApply += AuraEffectApplyFn(spell_sha_volcanic_eruption_damage_aura::HandleEffectApply, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
-        OnEffectApply += AuraEffectApplyFn(spell_sha_volcanic_eruption_damage_aura::HandleEffectApply, EFFECT_ALL, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_sha_volcanic_eruption_damage_aura::CalculatePeriodicDamageAmount, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE);
+        DoEffectCalcPeriodic += AuraEffectCalcPeriodicFn(spell_sha_volcanic_eruption_damage_aura::CalculatePeriodicTiming, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_sha_volcanic_eruption_damage_aura::HandlePeriodicUpdate, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectApply += AuraEffectApplyFn(spell_sha_volcanic_eruption_damage_aura::HandleEffectApply, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
     }
 
 private:
