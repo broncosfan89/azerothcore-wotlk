@@ -112,6 +112,7 @@ uint32 constexpr LAVA_BURST_SILVER_DEBUFF_TTL_MS = 15000;
 int32 constexpr LAVA_BURST_MAX_COOLDOWN_REDUCTION_MS = 6000;
 float constexpr LAVA_BURST_GOLD_SPREAD_RADIUS = 20.0f;
 float constexpr LAVA_BURST_DIAMOND_SEARCH_RADIUS = 40.0f;
+uint8 constexpr LAVA_BURST_DIAMOND_MAX_ADDITIONAL_TARGETS = 3;
 float constexpr CHAIN_LIGHTNING_SILVER_EXTRA_TARGET_RADIUS = 12.5f;
 uint32 constexpr CHAIN_LIGHTNING_BASE_TOTAL_TARGETS = 3;
 uint32 constexpr CHAIN_LIGHTNING_MAX_TOTAL_TARGETS = 12;
@@ -622,6 +623,7 @@ class spell_sha_lava_burst_mastery : public SpellScript
             return;
 
         _diamondTriggered = true;
+        uint8 additionalTargetsLaunched = 0;
 
         std::list<Unit*> nearbyUnits;
         Acore::AnyUnfriendlyUnitInObjectRangeCheck check(primaryTarget, _playerCaster, LAVA_BURST_DIAMOND_SEARCH_RADIUS);
@@ -633,6 +635,9 @@ class spell_sha_lava_burst_mastery : public SpellScript
             if (!candidate || !_playerCaster->IsValidAttackTarget(candidate))
                 continue;
 
+            if (candidate == primaryTarget)
+                continue;
+
             if (!HasFlameShockFromCaster(candidate, _playerCaster->GetGUID()))
                 continue;
 
@@ -640,6 +645,9 @@ class spell_sha_lava_burst_mastery : public SpellScript
                 candidate,
                 _config->AllowedSpellId,
                 TriggerCastFlags(TRIGGERED_IGNORE_GCD | TRIGGERED_IGNORE_CAST_IN_PROGRESS | TRIGGERED_IGNORE_POWER_AND_REAGENT_COST | TRIGGERED_IGNORE_SPELL_AND_CATEGORY_CD | TRIGGERED_CAST_DIRECTLY));
+
+            if (++additionalTargetsLaunched >= LAVA_BURST_DIAMOND_MAX_ADDITIONAL_TARGETS)
+                break;
         }
     }
 

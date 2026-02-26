@@ -65,6 +65,7 @@ int32 constexpr SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS = 6000;
 int32 constexpr SHADOW_BOLT_GOLD_DOT_DURATION_EXTEND_MS = 1000;
 int32 constexpr SHADOW_BOLT_GOLD_DOT_DURATION_CAP_MS = 20000;
 int32 constexpr SHADOW_BOLT_GOLD_DOT_FAST_TICK_INTERVAL_MS = 500;
+float constexpr SHADOW_BOLT_GOLD_DOT_STACK_CARRYOVER_PCT = 50.0f;
 
 HauntMasteryEffects BuildHauntMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -188,7 +189,8 @@ void ApplyStackingShadowBoltGoldDot(Player* caster, Unit* target, int32 addPerTi
     int32 priorMaxDuration = currentCorruptionAura ? std::max(currentCorruptionAura->GetMaxDuration(), SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS) : SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS;
     int32 priorDuration = currentCorruptionAura ? std::max(currentCorruptionAura->GetDuration(), SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS) : SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS;
     int32 const perTickFromHit = std::max<int32>(1, addPerTick);
-    int32 const stackedPerTick = std::max<int32>(1, previousTickAmount + perTickFromHit);
+    int32 const carryOverTick = std::max<int32>(0, int32(std::lround(float(previousTickAmount) * (SHADOW_BOLT_GOLD_DOT_STACK_CARRYOVER_PCT / 100.0f))));
+    int32 const stackedPerTick = std::max<int32>(1, carryOverTick + perTickFromHit);
 
     uint32 corruptionSpellId = currentCorruptionAura ? currentCorruptionAura->GetId() : SpellMastery::SPELL_WARLOCK_CORRUPTION_RANK_1;
     caster->CastCustomSpell(
