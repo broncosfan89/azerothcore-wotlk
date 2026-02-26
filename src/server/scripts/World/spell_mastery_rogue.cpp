@@ -119,9 +119,9 @@ FanOfKnivesMasteryEffects BuildFanOfKnivesMasteryEffects(SpellMastery::SpellMast
     if (ironLevel > 0)
         effects.IronEnergyRefund = int32(ironLevel) * 3;
 
-    // Bronze through Diamond: +2% damage per mastery level.
+    // Bronze through Diamond: +4% damage per mastery level.
     if (totalMasteryLevels > 0)
-        effects.DamageBonusPct = float(totalMasteryLevels) * 2.0f;
+        effects.DamageBonusPct = float(totalMasteryLevels) * 4.0f;
 
     // Silver: increase range from 8 yards to 20 yards at Silver 10.
     if (silverLevel > 0)

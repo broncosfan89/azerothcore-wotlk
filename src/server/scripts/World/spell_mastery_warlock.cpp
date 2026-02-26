@@ -124,7 +124,7 @@ ShadowBoltMasteryEffects BuildShadowBoltMasteryEffects(SpellMastery::SpellMaster
 
     // Gold: apply a scaling Shadow DoT.
     if (goldLevel > 0)
-        effects.GoldDotPerTickPct = 1.0f + (float(goldLevel - 1) * 0.5f); // 1.0% -> 5.5%
+        effects.GoldDotPerTickPct = 0.5f + (float(goldLevel - 1) * 0.25f); // 0.5% -> 2.75% (50% reduction)
 
     // Diamond: hit additional nearby targets.
     if (diamondLevel > 0)

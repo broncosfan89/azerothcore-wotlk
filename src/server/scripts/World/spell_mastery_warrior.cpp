@@ -66,11 +66,11 @@ ThunderClapMasteryEffects BuildThunderClapMasteryEffects(SpellMastery::SpellMast
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
 
     // Global output ramp: every tier level contributes % damage all the way through Diamond.
-    effects.DamageBonusPct += float(ironLevel) * 10.0f;
-    effects.DamageBonusPct += float(bronzeLevel) * 10.0f;
-    effects.DamageBonusPct += float(silverLevel) * 10.0f;
-    effects.DamageBonusPct += float(goldLevel) * 12.5f;
-    effects.DamageBonusPct += float(diamondLevel) * 15.0f;
+    effects.DamageBonusPct += float(ironLevel) * 5.0f;
+    effects.DamageBonusPct += float(bronzeLevel) * 5.0f;
+    effects.DamageBonusPct += float(silverLevel) * 5.0f;
+    effects.DamageBonusPct += float(goldLevel) * 5.0f;
+    effects.DamageBonusPct += float(diamondLevel) * 5.0f;
 
     // Bronze: every other level grants radius and cooldown gains.
     uint8 bronzeStepLevel = bronzeLevel / 2;
