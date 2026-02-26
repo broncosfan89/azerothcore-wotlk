@@ -28,6 +28,7 @@
 #include <array>
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 namespace
 {
@@ -36,6 +37,9 @@ uint32 constexpr ITEM_EMBLEM_OF_TRIUMPH = 47241;
 uint8 constexpr MYTHIC_UTGARDE_LEVEL_CAP = 15;
 uint32 constexpr MYTHIC_UTGARDE_ITEM_BASE = 59000;
 uint32 constexpr MYTHIC_UTGARDE_ITEM_STRIDE = 100;
+float constexpr MYTHIC_BERSERK_HEALTH_THRESHOLD_PCT = 30.0f;
+float constexpr MYTHIC_BERSERK_DAMAGE_MULTIPLIER = 1.30f;
+uint8 constexpr MYTHIC_BERSERK_MIN_LEVEL = 5;
 
 bool IsMythicLootBossEntry(uint32 entry)
 {
@@ -137,6 +141,8 @@ public:
         uint8 MythicMaxLevel;
         float MythicHealthMultiplier;
         float MythicDamageMultiplier;
+        uint32 MythicBerserkCheckTimerMs;
+        std::unordered_set<uint32> MythicBerserkAppliedCreatureGuids;
         uint8 MythicRewardUpgradeLevel;
         uint32 MythicRewardBaseCount;
         uint32 MythicRewardPerLevelDivisor;
@@ -149,6 +155,28 @@ public:
 
         ObjectGuid NPC_SpecialDrakeGUID;
         bool bRocksAchiev;
+
+        void ScaleCreatureAttackDamage(Creature* creature, float multiplier)
+        {
+            if (!creature || multiplier <= 0.0f)
+                return;
+
+            auto scaleAttackDamage = [creature, multiplier](WeaponAttackType attackType)
+            {
+                float minDamage = creature->GetWeaponDamageRange(attackType, MINDAMAGE);
+                float maxDamage = creature->GetWeaponDamageRange(attackType, MAXDAMAGE);
+                if (minDamage <= 0.0f && maxDamage <= 0.0f)
+                    return;
+
+                creature->SetBaseWeaponDamage(attackType, MINDAMAGE, std::max(1.0f, minDamage * multiplier));
+                creature->SetBaseWeaponDamage(attackType, MAXDAMAGE, std::max(1.0f, maxDamage * multiplier));
+                creature->UpdateDamagePhysical(attackType);
+            };
+
+            scaleAttackDamage(BASE_ATTACK);
+            scaleAttackDamage(OFF_ATTACK);
+            scaleAttackDamage(RANGED_ATTACK);
+        }
 
         void RecalculateMythicMultipliers()
         {
@@ -193,21 +221,7 @@ public:
                 creature->SetHealth(std::min<uint32>(scaledMaxHealth, scaledHealth));
             }
 
-            auto scaleAttackDamage = [creature, damageMultiplier](WeaponAttackType attackType)
-            {
-                float minDamage = creature->GetWeaponDamageRange(attackType, MINDAMAGE);
-                float maxDamage = creature->GetWeaponDamageRange(attackType, MAXDAMAGE);
-                if (minDamage <= 0.0f && maxDamage <= 0.0f)
-                    return;
-
-                creature->SetBaseWeaponDamage(attackType, MINDAMAGE, std::max(1.0f, minDamage * damageMultiplier));
-                creature->SetBaseWeaponDamage(attackType, MAXDAMAGE, std::max(1.0f, maxDamage * damageMultiplier));
-                creature->UpdateDamagePhysical(attackType);
-            };
-
-            scaleAttackDamage(BASE_ATTACK);
-            scaleAttackDamage(OFF_ATTACK);
-            scaleAttackDamage(RANGED_ATTACK);
+            ScaleCreatureAttackDamage(creature, damageMultiplier);
         }
 
         void SetMythicLevelForInstance(uint8 newLevel)
@@ -234,6 +248,43 @@ public:
 
             for (auto const& spawnPair : instance->GetCreatureBySpawnIdStore())
                 ApplyMythicScaleToCreature(spawnPair.second, healthRatio, damageRatio);
+        }
+
+        void ClearMythicBerserkForCreatureData(uint32 dataId)
+        {
+            if (!MythicEnabled)
+                return;
+
+            if (Creature* creature = GetCreature(dataId))
+                MythicBerserkAppliedCreatureGuids.erase(uint32(creature->GetGUID().GetCounter()));
+        }
+
+        void TryApplyMythicBossBerserk(uint32 dataId)
+        {
+            if (!MythicEnabled || MythicLevel < MYTHIC_BERSERK_MIN_LEVEL)
+                return;
+
+            Creature* creature = GetCreature(dataId);
+            if (!creature || !creature->IsAlive() || !creature->IsInCombat())
+                return;
+
+            if (creature->GetHealthPct() > MYTHIC_BERSERK_HEALTH_THRESHOLD_PCT)
+                return;
+
+            uint32 const guidLow = uint32(creature->GetGUID().GetCounter());
+            if (MythicBerserkAppliedCreatureGuids.find(guidLow) != MythicBerserkAppliedCreatureGuids.end())
+                return;
+
+            ScaleCreatureAttackDamage(creature, MYTHIC_BERSERK_DAMAGE_MULTIPLIER);
+            MythicBerserkAppliedCreatureGuids.insert(guidLow);
+
+            Map::PlayerList const& players = instance->GetPlayers();
+            for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+            {
+                Player* player = itr->GetSource();
+                if (player && player->GetSession())
+                    player->GetSession()->SendAreaTriggerMessage("{} goes Berserk at 30% (damage +30%).", creature->GetName());
+            }
         }
 
         void ApplyMythicLootModeToCreature(uint32 dataId)
@@ -329,6 +380,8 @@ public:
             MythicMaxLevel = MYTHIC_UTGARDE_LEVEL_CAP;
             MythicHealthMultiplier = 1.0f;
             MythicDamageMultiplier = 1.0f;
+            MythicBerserkCheckTimerMs = 1000;
+            MythicBerserkAppliedCreatureGuids.clear();
             MythicRewardUpgradeLevel = uint8(sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.RewardUpgradeLevel", 5));
             MythicRewardBaseCount = std::max<uint32>(1, sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.RewardBaseCount", 1));
             MythicRewardPerLevelDivisor = std::max<uint32>(1, sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.RewardPerLevelDivisor", 2));
@@ -355,6 +408,23 @@ public:
             return false;
         }
 
+        void Update(uint32 diff) override
+        {
+            if (!MythicEnabled || MythicLevel < MYTHIC_BERSERK_MIN_LEVEL)
+                return;
+
+            if (MythicBerserkCheckTimerMs <= diff)
+            {
+                TryApplyMythicBossBerserk(DATA_KELESETH);
+                TryApplyMythicBossBerserk(DATA_SKARVALD);
+                TryApplyMythicBossBerserk(DATA_DALRONN);
+                TryApplyMythicBossBerserk(DATA_INGVAR);
+                MythicBerserkCheckTimerMs = 500;
+            }
+            else
+                MythicBerserkCheckTimerMs -= diff;
+        }
+
         bool SetBossState(uint32 type, EncounterState state) override
         {
             if (!InstanceScript::SetBossState(type, state))
@@ -368,15 +438,24 @@ public:
                 switch (type)
                 {
                     case DATA_KELESETH:
+                        if (state == NOT_STARTED)
+                            ClearMythicBerserkForCreatureData(DATA_KELESETH);
                         ApplyMythicLootModeToCreature(DATA_KELESETH);
                         if (state == DONE)
                             RebuildMythicBossLoot(DATA_KELESETH);
                         break;
                     case DATA_DALRONN_AND_SKARVALD:
+                        if (state == NOT_STARTED)
+                        {
+                            ClearMythicBerserkForCreatureData(DATA_SKARVALD);
+                            ClearMythicBerserkForCreatureData(DATA_DALRONN);
+                        }
                         ApplyMythicLootModeToCreature(DATA_SKARVALD);
                         ApplyMythicLootModeToCreature(DATA_DALRONN);
                         break;
                     case DATA_INGVAR:
+                        if (state == NOT_STARTED)
+                            ClearMythicBerserkForCreatureData(DATA_INGVAR);
                         ApplyMythicLootModeToCreature(DATA_INGVAR);
                         if (state == DONE)
                             RebuildMythicBossLoot(DATA_INGVAR);
