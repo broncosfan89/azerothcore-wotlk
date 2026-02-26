@@ -4,7 +4,7 @@ Patch WotLK Item.dbc by cloning known source entries into custom IDs.
 
 Use case:
 - Source entries: 35570..35578 (Utgarde Keep heroic items)
-- Target entries: 59001..59009 (Mythic custom clones)
+- Target entries: 59001..60509 (Mythic 0..15 custom clones)
 """
 
 from __future__ import annotations
@@ -15,17 +15,33 @@ import struct
 from typing import Dict, List, Tuple
 
 
-MAPPING: Tuple[Tuple[int, int], ...] = (
-    (35570, 59001),
-    (35571, 59002),
-    (35572, 59003),
-    (35573, 59004),
-    (35574, 59005),
-    (35575, 59006),
-    (35576, 59007),
-    (35577, 59008),
-    (35578, 59009),
+SOURCE_ITEM_IDS: Tuple[int, ...] = (
+    35570,
+    35571,
+    35572,
+    35573,
+    35574,
+    35575,
+    35576,
+    35577,
+    35578,
 )
+MYTHIC_MIN_LEVEL = 0
+MYTHIC_MAX_LEVEL = 15
+TARGET_ITEM_BASE = 59000
+TARGET_ITEM_STRIDE = 100
+
+
+def build_mapping() -> Tuple[Tuple[int, int], ...]:
+    mapping: List[Tuple[int, int]] = []
+    for level in range(MYTHIC_MIN_LEVEL, MYTHIC_MAX_LEVEL + 1):
+        for slot, source_id in enumerate(SOURCE_ITEM_IDS, start=1):
+            target_id = TARGET_ITEM_BASE + (level * TARGET_ITEM_STRIDE) + slot
+            mapping.append((source_id, target_id))
+    return tuple(mapping)
+
+
+MAPPING = build_mapping()
 
 
 def parse_args() -> argparse.Namespace:
@@ -110,7 +126,8 @@ def main() -> int:
     print(f"Patched Item.dbc written to: {args.output}")
     if args.in_place:
         print(f"Patched input in place: {args.input}")
-    print("Added/updated entries: 59001..59009 (cloned from 35570..35578)")
+    print("Added/updated entries: 59001..60509 (slots 01..09 for Mythic levels 0..15)")
+    print("Source entries used for cloning: 35570..35578")
     return 0
 
 

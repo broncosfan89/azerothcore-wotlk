@@ -6,7 +6,7 @@ This folder contains a patched `Item.dbc`:
 
 It includes custom item rows for:
 
-- `59001` .. `59009`
+- `59001` .. `60509` (slot `01..09` for Mythic levels `0..15`)
 
 cloned from source rows:
 
@@ -42,4 +42,4 @@ Place `patch-Z.MPQ` in your WoW 3.3.5 `Data/<locale>/` folder (for example `Data
 
 1. Fully close WoW client.
 2. Clear cache (`Cache/` and WDB item cache files).
-3. Start client and test custom items `59001..59009`.
+3. Start client and test custom items in the `590xx` through `605xx` range.

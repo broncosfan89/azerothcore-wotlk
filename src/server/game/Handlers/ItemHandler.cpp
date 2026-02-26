@@ -31,6 +31,21 @@
 
 #include "ItemPackets.h"
 
+namespace
+{
+bool IsTrackedMythicUtgardeItem(uint32 itemId)
+{
+    if (itemId >= 980001 && itemId <= 980999)
+        return true;
+
+    if (itemId < 59001 || itemId > 60509)
+        return false;
+
+    uint32 const suffix = itemId % 100;
+    return suffix >= 1 && suffix <= 9;
+}
+}
+
 void WorldSession::HandleSplitItemOpcode(WorldPackets::Item::SplitItem& packet)
 {
     //LOG_DEBUG("network.opcode", "WORLD: CMSG_SPLIT_ITEM");
@@ -166,7 +181,7 @@ void WorldSession::HandleAutoEquipItemOpcode(WorldPackets::Item::AutoEquipItem& 
         return;
     }
 
-    bool const isTrackedMythicItem = (pProto->ItemId >= 59001 && pProto->ItemId <= 59009) || (pProto->ItemId >= 980001 && pProto->ItemId <= 980999);
+    bool const isTrackedMythicItem = IsTrackedMythicUtgardeItem(pProto->ItemId);
 
     uint8 eslot = _player->FindEquipSlot(pProto, NULL_SLOT, !pSrcItem->IsBag());
     if (eslot == NULL_SLOT)

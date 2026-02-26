@@ -48,6 +48,10 @@ enum eData
 
     DATA_UNLOCK_SKARVALD_LOOT = 200,
     DATA_UNLOCK_DALRONN_LOOT,
+
+    DATA_SET_MYTHIC_LEVEL = 300,
+    DATA_GET_MYTHIC_LEVEL,
+    DATA_GET_MYTHIC_MAX_LEVEL,
 };
 
 enum eGameObject
@@ -79,6 +83,7 @@ enum eCreatures
 
     NPC_DARK_RANGER_MARRAH          = 24137,
     NPC_ENSLAVED_PROTO_DRAKE        = 24083,
+    NPC_MYTHIC_DIFFICULTY_SELECTOR  = 190100,
 };
 
 template <class AI, class T>

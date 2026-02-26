@@ -32,6 +32,21 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 
+namespace
+{
+bool IsTrackedMythicUtgardeItem(uint32 itemId)
+{
+    if (itemId >= 980001 && itemId <= 980999)
+        return true;
+
+    if (itemId < 59001 || itemId > 60509)
+        return false;
+
+    uint32 const suffix = itemId % 100;
+    return suffix >= 1 && suffix <= 9;
+}
+}
+
 void WorldSession::HandleClientCastFlags(WorldPacket& recvPacket, uint8 castFlags, SpellCastTargets& targets)
 {
     // some spell cast packet including more data (for projectiles?)
@@ -89,7 +104,7 @@ void WorldSession::HandleUseItemOpcode(WorldPacket& recvPacket)
     if (earlyProto)
     {
         uint32 const earlyEntry = pItem->GetEntry();
-        bool const isTrackedMythic = (earlyEntry >= 59001 && earlyEntry <= 59009) || (earlyEntry >= 980001 && earlyEntry <= 980999);
+        bool const isTrackedMythic = IsTrackedMythicUtgardeItem(earlyEntry);
         if (isTrackedMythic && earlyProto->InventoryType != INVTYPE_NON_EQUIP && !pItem->IsEquipped())
         {
             if (pItem->GetGUID() != itemGUID)

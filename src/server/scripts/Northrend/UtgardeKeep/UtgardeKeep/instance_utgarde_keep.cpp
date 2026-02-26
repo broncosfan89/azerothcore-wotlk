@@ -22,6 +22,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "ScriptedGossip.h"
 #include "utgarde_keep.h"
 
 #include <array>
@@ -32,47 +33,58 @@ namespace
 {
 uint32 constexpr ITEM_EMBLEM_OF_CONQUEST = 45624;
 uint32 constexpr ITEM_EMBLEM_OF_TRIUMPH = 47241;
+uint8 constexpr MYTHIC_UTGARDE_LEVEL_CAP = 15;
+uint32 constexpr MYTHIC_UTGARDE_ITEM_BASE = 59000;
+uint32 constexpr MYTHIC_UTGARDE_ITEM_STRIDE = 100;
 
 bool IsMythicLootBossEntry(uint32 entry)
 {
     return entry == NPC_KELESETH || entry == NPC_INGVAR || entry == NPC_SKARVALD || entry == NPC_DALRONN;
 }
 
-std::array<uint32, 3> constexpr ITEM_POOL_KELESETH_M0 =
+std::array<uint8, 3> constexpr ITEM_POOL_KELESETH_SLOT =
 {
-    59001,
-    59002,
-    59003
+    1,
+    2,
+    3
 };
 
-std::array<uint32, 3> constexpr ITEM_POOL_SKARVALD_DALRONN_M0 =
+std::array<uint8, 3> constexpr ITEM_POOL_SKARVALD_DALRONN_SLOT =
 {
-    59004,
-    59005,
-    59006
+    4,
+    5,
+    6
 };
 
-std::array<uint32, 3> constexpr ITEM_POOL_INGVAR_M0 =
+std::array<uint8, 3> constexpr ITEM_POOL_INGVAR_SLOT =
 {
-    59007,
-    59008,
-    59009
+    7,
+    8,
+    9
 };
 
-uint32 GetRandomMythicUtgardeItemForDataId(uint32 dataId)
+uint32 GetMythicUtgardeItemIdForTierAndSlot(uint8 mythicLevel, uint8 slotInPool)
 {
-    std::array<uint32, 3> const* pool = nullptr;
+    if (mythicLevel > MYTHIC_UTGARDE_LEVEL_CAP || slotInPool < 1 || slotInPool > 9)
+        return 0;
+
+    return MYTHIC_UTGARDE_ITEM_BASE + (uint32(mythicLevel) * MYTHIC_UTGARDE_ITEM_STRIDE) + slotInPool;
+}
+
+uint32 GetRandomMythicUtgardeItemForDataId(uint32 dataId, uint8 mythicLevel)
+{
+    std::array<uint8, 3> const* pool = nullptr;
     switch (dataId)
     {
         case DATA_KELESETH:
-            pool = &ITEM_POOL_KELESETH_M0;
+            pool = &ITEM_POOL_KELESETH_SLOT;
             break;
         case DATA_DALRONN:
         case DATA_SKARVALD:
-            pool = &ITEM_POOL_SKARVALD_DALRONN_M0;
+            pool = &ITEM_POOL_SKARVALD_DALRONN_SLOT;
             break;
         case DATA_INGVAR:
-            pool = &ITEM_POOL_INGVAR_M0;
+            pool = &ITEM_POOL_INGVAR_SLOT;
             break;
         default:
             break;
@@ -81,7 +93,8 @@ uint32 GetRandomMythicUtgardeItemForDataId(uint32 dataId)
     if (!pool)
         return 0;
 
-    return (*pool)[urand(0, uint32(pool->size() - 1))];
+    uint8 const poolSlot = (*pool)[urand(0, uint32(pool->size() - 1))];
+    return GetMythicUtgardeItemIdForTierAndSlot(mythicLevel, poolSlot);
 }
 }
 
@@ -121,6 +134,7 @@ public:
         std::string str_data;
         bool MythicEnabled;
         uint8 MythicLevel;
+        uint8 MythicMaxLevel;
         float MythicHealthMultiplier;
         float MythicDamageMultiplier;
         uint8 MythicRewardUpgradeLevel;
@@ -135,6 +149,92 @@ public:
 
         ObjectGuid NPC_SpecialDrakeGUID;
         bool bRocksAchiev;
+
+        void RecalculateMythicMultipliers()
+        {
+            if (!MythicEnabled)
+            {
+                MythicHealthMultiplier = 1.0f;
+                MythicDamageMultiplier = 1.0f;
+                return;
+            }
+
+            float const healthM0 = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.HealthMultiplierM0", 1.30f);
+            float const healthPerLevel = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.HealthMultiplierPerLevel", 0.15f);
+            float const damageM0 = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.DamageMultiplierM0", 1.15f);
+            float const damagePerLevel = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.DamageMultiplierPerLevel", 0.10f);
+
+            MythicHealthMultiplier = std::max(1.0f, healthM0 + (healthPerLevel * float(MythicLevel)));
+            MythicDamageMultiplier = std::max(1.0f, damageM0 + (damagePerLevel * float(MythicLevel)));
+        }
+
+        bool CanApplyMythicScalingToCreature(Creature const* creature) const
+        {
+            return creature && creature->IsHostileToPlayers() && !creature->IsTrigger() && !creature->IsTotem();
+        }
+
+        void ApplyMythicScaleToCreature(Creature* creature, float healthMultiplier, float damageMultiplier)
+        {
+            if (!MythicEnabled || !CanApplyMythicScalingToCreature(creature))
+                return;
+
+            if (IsMythicLootBossEntry(creature->GetEntry()))
+                creature->SetLootMode(LOOT_MODE_HARD_MODE_1);
+            else
+                creature->SetLootMode(0);
+
+            uint32 const currentMaxHealth = creature->GetMaxHealth();
+            if (currentMaxHealth > 0)
+            {
+                float const healthPct = creature->GetMaxHealth() > 0 ? float(creature->GetHealth()) / float(creature->GetMaxHealth()) : 1.0f;
+                uint32 const scaledMaxHealth = std::max<uint32>(1, uint32(std::lround(float(currentMaxHealth) * healthMultiplier)));
+                creature->SetMaxHealth(scaledMaxHealth);
+                uint32 const scaledHealth = std::max<uint32>(1, uint32(std::lround(float(scaledMaxHealth) * std::clamp(healthPct, 0.0f, 1.0f))));
+                creature->SetHealth(std::min<uint32>(scaledMaxHealth, scaledHealth));
+            }
+
+            auto scaleAttackDamage = [creature, damageMultiplier](WeaponAttackType attackType)
+            {
+                float minDamage = creature->GetWeaponDamageRange(attackType, MINDAMAGE);
+                float maxDamage = creature->GetWeaponDamageRange(attackType, MAXDAMAGE);
+                if (minDamage <= 0.0f && maxDamage <= 0.0f)
+                    return;
+
+                creature->SetBaseWeaponDamage(attackType, MINDAMAGE, std::max(1.0f, minDamage * damageMultiplier));
+                creature->SetBaseWeaponDamage(attackType, MAXDAMAGE, std::max(1.0f, maxDamage * damageMultiplier));
+                creature->UpdateDamagePhysical(attackType);
+            };
+
+            scaleAttackDamage(BASE_ATTACK);
+            scaleAttackDamage(OFF_ATTACK);
+            scaleAttackDamage(RANGED_ATTACK);
+        }
+
+        void SetMythicLevelForInstance(uint8 newLevel)
+        {
+            if (!MythicEnabled)
+                return;
+
+            for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
+                if (m_auiEncounter[i] != NOT_STARTED)
+                    return;
+
+            newLevel = std::min<uint8>(newLevel, MythicMaxLevel);
+            if (newLevel == MythicLevel)
+                return;
+
+            float const oldHealthMultiplier = MythicHealthMultiplier;
+            float const oldDamageMultiplier = MythicDamageMultiplier;
+
+            MythicLevel = newLevel;
+            RecalculateMythicMultipliers();
+
+            float const healthRatio = oldHealthMultiplier > 0.0f ? (MythicHealthMultiplier / oldHealthMultiplier) : MythicHealthMultiplier;
+            float const damageRatio = oldDamageMultiplier > 0.0f ? (MythicDamageMultiplier / oldDamageMultiplier) : MythicDamageMultiplier;
+
+            for (auto const& spawnPair : instance->GetCreatureBySpawnIdStore())
+                ApplyMythicScaleToCreature(spawnPair.second, healthRatio, damageRatio);
+        }
 
         void ApplyMythicLootModeToCreature(uint32 dataId)
         {
@@ -192,32 +292,16 @@ public:
             if (creature->GetLootMode())
                 creature->loot.generateMoneyLoot(creature->GetCreatureTemplate()->mingold, creature->GetCreatureTemplate()->maxgold);
 
-            // Filter out invalid entries (e.g. item 0) that can appear as '?' and are not equipable.
-            creature->loot.items.erase(
-                std::remove_if(creature->loot.items.begin(), creature->loot.items.end(), [](LootItem const& lootItem)
-                {
-                    return lootItem.itemid == 0 || !sObjectMgr->GetItemTemplate(lootItem.itemid);
-                }),
-                creature->loot.items.end());
-
-            bool hasValidLootItem = false;
-            for (LootItem const& lootItem : creature->loot.items)
+            creature->loot.items.clear();
+            if (uint32 forcedItemId = GetRandomMythicUtgardeItemForDataId(dataId, MythicLevel))
             {
-                if (sObjectMgr->GetItemTemplate(lootItem.itemid))
+                if (sObjectMgr->GetItemTemplate(forcedItemId))
                 {
-                    hasValidLootItem = true;
-                    break;
-                }
-            }
-
-            if (!hasValidLootItem)
-            {
-                if (uint32 forcedItemId = GetRandomMythicUtgardeItemForDataId(dataId))
-                {
-                    LootStoreItem forcedItem(forcedItemId, 0, 100.0f, false, LOOT_MODE_DEFAULT, 0, 1, 1);
+                    LootStoreItem forcedItem(forcedItemId, 0, 100.0f, false, LOOT_MODE_HARD_MODE_1, 0, 1, 1);
                     creature->loot.AddItem(forcedItem);
-                    LOG_INFO("scripts", "UK Mythic loot rebuild fallback injected item {} for bossEntry {} dataId {}", forcedItemId, creature->GetEntry(), dataId);
                 }
+                else
+                    LOG_INFO("scripts", "UK Mythic loot rebuild warning: missing mythic item template {} at level {}", forcedItemId, uint32(MythicLevel));
             }
 
             std::string const recipientGuid = lootRecipient ? lootRecipient->GetGUID().ToString() : "none";
@@ -242,6 +326,7 @@ public:
 
             MythicEnabled = false;
             MythicLevel = 0;
+            MythicMaxLevel = MYTHIC_UTGARDE_LEVEL_CAP;
             MythicHealthMultiplier = 1.0f;
             MythicDamageMultiplier = 1.0f;
             MythicRewardUpgradeLevel = uint8(sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.RewardUpgradeLevel", 5));
@@ -250,18 +335,12 @@ public:
 
             if (instance && instance->IsHeroic() && sConfigMgr->GetOption<bool>("Custom.MythicUtgardeKeep.Enable", false))
             {
-                uint32 const maxLevel = std::max<uint32>(0, sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.MaxLevel", 20));
+                uint32 const maxLevel = std::max<uint32>(0, sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.MaxLevel", MYTHIC_UTGARDE_LEVEL_CAP));
                 uint32 const configuredLevel = sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.Level", 0);
-                MythicLevel = uint8(std::min<uint32>(maxLevel, configuredLevel));
-
-                float const healthM0 = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.HealthMultiplierM0", 1.30f);
-                float const healthPerLevel = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.HealthMultiplierPerLevel", 0.15f);
-                float const damageM0 = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.DamageMultiplierM0", 1.15f);
-                float const damagePerLevel = sConfigMgr->GetOption<float>("Custom.MythicUtgardeKeep.DamageMultiplierPerLevel", 0.10f);
-
-                MythicHealthMultiplier = std::max(1.0f, healthM0 + (healthPerLevel * float(MythicLevel)));
-                MythicDamageMultiplier = std::max(1.0f, damageM0 + (damagePerLevel * float(MythicLevel)));
+                MythicMaxLevel = uint8(std::min<uint32>(MYTHIC_UTGARDE_LEVEL_CAP, maxLevel));
+                MythicLevel = uint8(std::min<uint32>(MythicMaxLevel, configuredLevel));
                 MythicEnabled = true;
+                RecalculateMythicMultipliers();
             }
         }
 
@@ -350,43 +429,12 @@ public:
             }
 
             if (MythicEnabled && plr && plr->GetSession())
-                plr->GetSession()->SendAreaTriggerMessage("Utgarde Keep Mythic {} active (HP x{:.2f}, Damage x{:.2f}).", uint32(MythicLevel), MythicHealthMultiplier, MythicDamageMultiplier);
+                plr->GetSession()->SendAreaTriggerMessage("Utgarde Keep Mythic {} active (HP x{:.2f}, Damage x{:.2f}). Talk to the Mythic Difficulty Selector to set 0-{}.", uint32(MythicLevel), MythicHealthMultiplier, MythicDamageMultiplier, uint32(MythicMaxLevel));
         }
 
         void OnCreatureCreate(Creature* creature) override
         {
-            if (MythicEnabled && creature && creature->IsHostileToPlayers() && !creature->IsTrigger() && !creature->IsTotem())
-            {
-                if (IsMythicLootBossEntry(creature->GetEntry()))
-                    creature->SetLootMode(LOOT_MODE_HARD_MODE_1);
-                else
-                    creature->SetLootMode(0);
-
-                uint32 const currentMaxHealth = creature->GetMaxHealth();
-                if (currentMaxHealth > 0)
-                {
-                    uint32 const scaledMaxHealth = std::max<uint32>(1, uint32(std::lround(float(currentMaxHealth) * MythicHealthMultiplier)));
-                    creature->SetMaxHealth(scaledMaxHealth);
-                    if (creature->IsAlive())
-                        creature->SetHealth(scaledMaxHealth);
-                }
-
-                auto scaleAttackDamage = [this, creature](WeaponAttackType attackType)
-                {
-                    float minDamage = creature->GetWeaponDamageRange(attackType, MINDAMAGE);
-                    float maxDamage = creature->GetWeaponDamageRange(attackType, MAXDAMAGE);
-                    if (minDamage <= 0.0f && maxDamage <= 0.0f)
-                        return;
-
-                    creature->SetBaseWeaponDamage(attackType, MINDAMAGE, std::max(1.0f, minDamage * MythicDamageMultiplier));
-                    creature->SetBaseWeaponDamage(attackType, MAXDAMAGE, std::max(1.0f, maxDamage * MythicDamageMultiplier));
-                    creature->UpdateDamagePhysical(attackType);
-                };
-
-                scaleAttackDamage(BASE_ATTACK);
-                scaleAttackDamage(OFF_ATTACK);
-                scaleAttackDamage(RANGED_ATTACK);
-            }
+            ApplyMythicScaleToCreature(creature, MythicHealthMultiplier, MythicDamageMultiplier);
 
             switch (creature->GetEntry())
             {
@@ -572,6 +620,9 @@ public:
                     if (Creature* c = instance->GetCreature(NPC_SpecialDrakeGUID))
                         c->AI()->SetData(28, 6);
                     break;
+                case DATA_SET_MYTHIC_LEVEL:
+                    SetMythicLevelForInstance(uint8(data));
+                    break;
             }
 
             if (data == DONE)
@@ -592,6 +643,10 @@ public:
                 case DATA_FORGE_2:
                 case DATA_FORGE_3:
                     return ForgeEventMask & (uint32)(1 << (id - 100));
+                case DATA_GET_MYTHIC_LEVEL:
+                    return MythicEnabled ? MythicLevel : 0;
+                case DATA_GET_MYTHIC_MAX_LEVEL:
+                    return MythicEnabled ? MythicMaxLevel : 0;
             }
 
             return 0;
@@ -603,11 +658,21 @@ public:
             data >> m_auiEncounter[1];
             data >> m_auiEncounter[2];
             data >> ForgeEventMask;
+
+            uint32 savedMythicLevel = 0;
+            if (data >> savedMythicLevel)
+            {
+                if (MythicEnabled)
+                {
+                    MythicLevel = uint8(std::min<uint32>(MythicMaxLevel, savedMythicLevel));
+                    RecalculateMythicMultipliers();
+                }
+            }
         }
 
         void WriteSaveDataMore(std::ostringstream& data) override
         {
-            data << m_auiEncounter[0] << ' ' << m_auiEncounter[1] << ' ' << m_auiEncounter[2] << ' ' << ForgeEventMask;
+            data << m_auiEncounter[0] << ' ' << m_auiEncounter[1] << ' ' << m_auiEncounter[2] << ' ' << ForgeEventMask << ' ' << uint32(MythicLevel);
         }
 
         bool CheckAchievementCriteriaMeet(uint32 criteria_id, Player const*  /*source*/, Unit const*  /*target*/, uint32  /*miscvalue1*/) override
@@ -622,7 +687,91 @@ public:
     };
 };
 
+class npc_uk_mythic_selector : public CreatureScript
+{
+public:
+    npc_uk_mythic_selector() : CreatureScript("npc_uk_mythic_selector") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        ClearGossipMenuFor(player);
+
+        if (!player->GetMap() || !player->GetMap()->IsHeroic())
+        {
+            player->GetSession()->SendAreaTriggerMessage("Mythic difficulty can only be changed in Heroic Utgarde Keep.");
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
+        InstanceScript* instance = creature->GetInstanceScript();
+        if (!instance)
+        {
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
+        uint32 const currentLevel = instance->GetData(DATA_GET_MYTHIC_LEVEL);
+        uint32 const maxLevel = instance->GetData(DATA_GET_MYTHIC_MAX_LEVEL);
+        if (maxLevel == 0)
+        {
+            player->GetSession()->SendAreaTriggerMessage("Mythic mode is not enabled for this instance.");
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
+        for (uint32 level = 0; level <= maxLevel; ++level)
+        {
+            std::string label = "Set Mythic " + std::to_string(level);
+            if (level == currentLevel)
+                label += " (current)";
+
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, label, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + level);
+        }
+
+        SendGossipMenuFor(player, 1, creature->GetGUID());
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    {
+        ClearGossipMenuFor(player);
+
+        if (action < GOSSIP_ACTION_INFO_DEF)
+        {
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
+        InstanceScript* instance = creature->GetInstanceScript();
+        if (!instance)
+        {
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
+        uint32 const requestedLevel = action - GOSSIP_ACTION_INFO_DEF;
+        uint32 const maxLevel = instance->GetData(DATA_GET_MYTHIC_MAX_LEVEL);
+        if (requestedLevel > maxLevel)
+        {
+            player->GetSession()->SendAreaTriggerMessage("Invalid Mythic level {}. Max is {}.", requestedLevel, maxLevel);
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
+        instance->SetData(DATA_SET_MYTHIC_LEVEL, requestedLevel);
+        uint32 const activeLevel = instance->GetData(DATA_GET_MYTHIC_LEVEL);
+        if (activeLevel == requestedLevel)
+            player->GetSession()->SendAreaTriggerMessage("Utgarde Keep Mythic level set to {}.", activeLevel);
+        else
+            player->GetSession()->SendAreaTriggerMessage("Mythic level is locked for this run (active level remains {}). Reset the instance to change it.", activeLevel);
+
+        CloseGossipMenuFor(player);
+        return true;
+    }
+};
+
 void AddSC_instance_utgarde_keep()
 {
     new instance_utgarde_keep();
+    new npc_uk_mythic_selector();
 }
