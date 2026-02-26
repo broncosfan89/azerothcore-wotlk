@@ -71,14 +71,15 @@ VolleyMasteryEffects BuildVolleyMasteryEffects(SpellMastery::SpellMasteryProgres
     uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
     uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
-    // Iron: increase Volley damage.
-    if (ironLevel > 0)
-        effects.IronDamageBonusPct = float(ironLevel) * 10.0f;
+    // Damage scaling spans all tiers: +3% per mastery level (max +150% at Diamond 10).
+    if (totalMasteryLevels > 0)
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 3.0f;
 
     // Bronze: increase Volley radius.
     if (bronzeLevel > 0)
-        effects.BronzeRadiusMultiplier += 1.5f * (float(bronzeLevel) / 10.0f);
+        effects.BronzeRadiusMultiplier += 0.5f * (float(bronzeLevel) / 10.0f);
 
     // Silver: increase Volley tick rate (faster periodic trigger).
     if (silverLevel > 0)
@@ -93,7 +94,7 @@ VolleyMasteryEffects BuildVolleyMasteryEffects(SpellMastery::SpellMasteryProgres
 
     // Diamond: add AoE burst damage around each target hit by Volley.
     if (diamondLevel > 0)
-        effects.DiamondBurstDamagePct = 20.0f + (float(diamondLevel - 1) * (40.0f / 9.0f)); // 20% -> 60%
+        effects.DiamondBurstDamagePct = 10.0f + (float(diamondLevel - 1) * (20.0f / 9.0f)); // 10% -> 30%
 
     return effects;
 }
