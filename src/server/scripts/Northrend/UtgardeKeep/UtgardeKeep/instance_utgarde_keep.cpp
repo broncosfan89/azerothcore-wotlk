@@ -40,6 +40,8 @@ uint32 constexpr MYTHIC_UTGARDE_ITEM_STRIDE = 100;
 float constexpr MYTHIC_BERSERK_HEALTH_THRESHOLD_PCT = 30.0f;
 float constexpr MYTHIC_BERSERK_DAMAGE_MULTIPLIER = 1.30f;
 uint8 constexpr MYTHIC_BERSERK_MIN_LEVEL = 5;
+uint8 constexpr MYTHIC_EXTRA_TRASH_MIN_LEVEL = 10;
+uint8 constexpr MYTHIC_EXTRA_TRASH_CHANCE_PCT = 30;
 
 bool IsMythicLootBossEntry(uint32 entry)
 {
@@ -143,6 +145,7 @@ public:
         float MythicDamageMultiplier;
         uint32 MythicBerserkCheckTimerMs;
         std::unordered_set<uint32> MythicBerserkAppliedCreatureGuids;
+        std::unordered_set<uint32> MythicExtraTrashProcessedSpawnIds;
         uint8 MythicRewardUpgradeLevel;
         uint32 MythicRewardBaseCount;
         uint32 MythicRewardPerLevelDivisor;
@@ -247,7 +250,10 @@ public:
             float const damageRatio = oldDamageMultiplier > 0.0f ? (MythicDamageMultiplier / oldDamageMultiplier) : MythicDamageMultiplier;
 
             for (auto const& spawnPair : instance->GetCreatureBySpawnIdStore())
+            {
                 ApplyMythicScaleToCreature(spawnPair.second, healthRatio, damageRatio);
+                TrySpawnMythicExtraTrash(spawnPair.second);
+            }
         }
 
         void ClearMythicBerserkForCreatureData(uint32 dataId)
@@ -285,6 +291,38 @@ public:
                 if (player && player->GetSession())
                     player->GetSession()->SendAreaTriggerMessage("{} goes Berserk at 30% (damage +30%).", creature->GetName());
             }
+        }
+
+        bool IsMythicExtraTrashCandidate(Creature* creature) const
+        {
+            if (!MythicEnabled || MythicLevel < MYTHIC_EXTRA_TRASH_MIN_LEVEL || !creature)
+                return false;
+
+            if (!CanApplyMythicScalingToCreature(creature))
+                return false;
+
+            if (IsMythicLootBossEntry(creature->GetEntry()))
+                return false;
+
+            return creature->GetSpawnId() != 0;
+        }
+
+        void TrySpawnMythicExtraTrash(Creature* creature)
+        {
+            if (!IsMythicExtraTrashCandidate(creature))
+                return;
+
+            uint32 const spawnId = creature->GetSpawnId();
+            if (!MythicExtraTrashProcessedSpawnIds.insert(spawnId).second)
+                return;
+
+            if (urand(1, 100) > MYTHIC_EXTRA_TRASH_CHANCE_PCT)
+                return;
+
+            Position spawnPos = creature->GetNearPosition(frand(0.75f, 2.25f), frand(0.0f, float(2.0 * M_PI)));
+
+            if (Creature* extraTrash = creature->SummonCreature(creature->GetEntry(), spawnPos, TEMPSUMMON_CORPSE_DESPAWN, 0))
+                ApplyMythicScaleToCreature(extraTrash, MythicHealthMultiplier, MythicDamageMultiplier);
         }
 
         void ApplyMythicLootModeToCreature(uint32 dataId)
@@ -382,6 +420,7 @@ public:
             MythicDamageMultiplier = 1.0f;
             MythicBerserkCheckTimerMs = 1000;
             MythicBerserkAppliedCreatureGuids.clear();
+            MythicExtraTrashProcessedSpawnIds.clear();
             MythicRewardUpgradeLevel = uint8(sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.RewardUpgradeLevel", 5));
             MythicRewardBaseCount = std::max<uint32>(1, sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.RewardBaseCount", 1));
             MythicRewardPerLevelDivisor = std::max<uint32>(1, sConfigMgr->GetOption<uint32>("Custom.MythicUtgardeKeep.RewardPerLevelDivisor", 2));
@@ -514,6 +553,7 @@ public:
         void OnCreatureCreate(Creature* creature) override
         {
             ApplyMythicScaleToCreature(creature, MythicHealthMultiplier, MythicDamageMultiplier);
+            TrySpawnMythicExtraTrash(creature);
 
             switch (creature->GetEntry())
             {
