@@ -1795,6 +1795,77 @@ Custom.MythicUtgardeKeep.RewardBaseCount = 1
 Custom.MythicUtgardeKeep.RewardPerLevelDivisor = 2
 
 #
+#    Custom.MythicWotlkDungeons.Enable
+#        Description: Enables Mythic mode for all Wrath heroic 5-player dungeons.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+
+Custom.MythicWotlkDungeons.Enable = 1
+
+#
+#    Custom.MythicWotlkDungeons.Level
+#        Description: Default Mythic level used at instance creation.
+#        Default:     0
+
+Custom.MythicWotlkDungeons.Level = 0
+
+#
+#    Custom.MythicWotlkDungeons.MaxLevel
+#        Description: Maximum selectable Mythic level.
+#        Default:     20
+
+Custom.MythicWotlkDungeons.MaxLevel = 20
+
+#
+#    Custom.MythicWotlkDungeons.HealthMultiplierM0
+#        Description: Base health multiplier at Mythic 0.
+#        Default:     1.30
+
+Custom.MythicWotlkDungeons.HealthMultiplierM0 = 1.30
+
+#
+#    Custom.MythicWotlkDungeons.HealthMultiplierPerLevel
+#        Description: Additional health multiplier per Mythic level.
+#        Default:     0.15
+
+Custom.MythicWotlkDungeons.HealthMultiplierPerLevel = 0.15
+
+#
+#    Custom.MythicWotlkDungeons.DamageMultiplierM0
+#        Description: Base damage multiplier at Mythic 0.
+#        Default:     1.15
+
+Custom.MythicWotlkDungeons.DamageMultiplierM0 = 1.15
+
+#
+#    Custom.MythicWotlkDungeons.DamageMultiplierPerLevel
+#        Description: Additional damage multiplier per Mythic level.
+#        Default:     0.10
+
+Custom.MythicWotlkDungeons.DamageMultiplierPerLevel = 0.10
+
+#
+#    Custom.MythicWotlkDungeons.RewardUpgradeLevel
+#        Description: Emblem reward changes to Triumph at this level and above.
+#        Default:     5
+
+Custom.MythicWotlkDungeons.RewardUpgradeLevel = 5
+
+#
+#    Custom.MythicWotlkDungeons.RewardBaseCount
+#        Description: Base reward count per boss at Mythic level 0.
+#        Default:     1
+
+Custom.MythicWotlkDungeons.RewardBaseCount = 1
+
+#
+#    Custom.MythicWotlkDungeons.RewardPerLevelDivisor
+#        Description: Extra rewards gained as (MythicLevel / divisor).
+#        Default:     2
+
+Custom.MythicWotlkDungeons.RewardPerLevelDivisor = 2
+
+#
 #    PlayerStart.MapsExplored
 #        Description: Characters start with all maps explored.
 #        Default:     0 - (Disabled)

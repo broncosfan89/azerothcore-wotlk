@@ -417,6 +417,12 @@ void EnsureShamanInstantLevelOneSpells(Player* player)
 
     if (!player->HasSpell(SPELL_SHAMAN_LAVA_BURST_RANK_1))
         player->learnSpell(SPELL_SHAMAN_LAVA_BURST_RANK_1);
+
+    if (!player->HasSpell(SPELL_SHAMAN_VOLCANIC_ERUPTION))
+        player->learnSpell(SPELL_SHAMAN_VOLCANIC_ERUPTION);
+
+    if (SPELL_SHAMAN_VOLCANIC_ERUPTION != 66690 && player->HasSpell(66690))
+        player->removeSpell(66690, SPEC_MASK_ALL, false);
 }
 
 void EnsureMageInstantLevelOneSpells(Player* player)

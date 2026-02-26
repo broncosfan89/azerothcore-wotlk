@@ -8,6 +8,12 @@
 - Server-side only unless explicitly requested: do NOT modify client MPQ/DBC.
 - Prefer C++ scripts/modules over DB-heavy changes, but DB migrations are OK.
 
+## Client patch workflow (only when explicitly requested)
+- If a task includes DBC-impacting changes, rebuild the client patch before finishing:
+  `powershell -ExecutionPolicy Bypass -File tools/build_item_patch.ps1 -PatchInputInPlace`
+- Output patch to copy into WoW client Data folder:
+  `tools/client_patch/patch-Z.MPQ`
+
 ## Build (Windows / PowerShell)
 - Build output dir: D:\azerothcore-wotlk-playerbot\build\bin\Release
 - Build command (run from build folder): cmake --build . --config Release --target worldserver

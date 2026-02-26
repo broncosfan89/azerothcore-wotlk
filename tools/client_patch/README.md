@@ -1,8 +1,9 @@
-## Item.dbc client patch (WotLK 3.3.5)
+## Client patch (WotLK 3.3.5)
 
-This folder contains a patched `Item.dbc`:
+This folder contains patched DBC files:
 
 - `DBFilesClient/Item.dbc`
+- `DBFilesClient/Spell.dbc`
 
 It includes custom item rows for:
 
@@ -27,6 +28,9 @@ One-command workflow (patch DBC + build MPQ):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/build_item_patch.ps1 -PatchInputInPlace
+
+# Spell.dbc (Volcanic Eruption custom spell row + MPQ build)
+powershell -ExecutionPolicy Bypass -File tools/build_spell_patch.ps1 -PatchInputInPlace
 ```
 
 ### Package for client

@@ -25,6 +25,7 @@
 #include "GridNotifiersImpl.h"
 #include "Player.h"
 #include "Spell.h"
+#include "SpellAuras.h"
 #include "SpellMgr.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
@@ -117,6 +118,11 @@ float constexpr CHAIN_LIGHTNING_SILVER_EXTRA_TARGET_RADIUS = 12.5f;
 uint32 constexpr CHAIN_LIGHTNING_BASE_TOTAL_TARGETS = 3;
 uint32 constexpr CHAIN_LIGHTNING_MAX_TOTAL_TARGETS = 12;
 float constexpr CHAIN_LIGHTNING_BASE_JUMP_MULTIPLIER = 0.70f;
+int32 constexpr SHAMAN_VOLCANIC_ERUPTION_CAST_TIME_MS = 2500;
+int32 constexpr SHAMAN_VOLCANIC_ERUPTION_DURATION_MS = 10000;
+int32 constexpr SHAMAN_VOLCANIC_ERUPTION_TICK_MS = 1000;
+float constexpr SHAMAN_VOLCANIC_ERUPTION_LEVEL80_DAMAGE_MULTIPLIER = 5.0f;
+int32 constexpr SHAMAN_VOLCANIC_ERUPTION_LEVEL80_MIN_HIT = 850;
 
 std::unordered_map<ChainLightningGoldDebuffKey, ChainLightningGoldDebuffState, ChainLightningGoldDebuffKeyHash> ChainLightningGoldDebuffStates;
 std::unordered_map<LavaBurstSilverDebuffKey, LavaBurstSilverDebuffState, LavaBurstSilverDebuffKeyHash> LavaBurstSilverDebuffStates;
@@ -320,6 +326,29 @@ uint8 GetActiveGoldDebuffStacks(Player* caster, Unit* target)
     }
 
     return std::max<uint8>(1, itr->second.Stacks);
+}
+
+int32 ScaleVolcanicEruptionDamage(Player* caster, SpellInfo const* spellInfo, int32 amount)
+{
+    if (!caster || amount <= 0)
+        return amount;
+
+    amount = SpellMastery::ApplyEarlyAccessSpellScale(caster, spellInfo, amount);
+
+    float const levelScale = std::clamp(float(std::max<uint32>(1, caster->GetLevel())) / 80.0f, 0.20f, 1.0f);
+    float const damageMultiplier = 1.0f + (SHAMAN_VOLCANIC_ERUPTION_LEVEL80_DAMAGE_MULTIPLIER - 1.0f) * levelScale;
+
+    int32 const scaledByPct = std::max<int32>(1, int32(std::lround(float(amount) * damageMultiplier)));
+    int32 const scaledMin = std::max<int32>(1, int32(std::lround(float(SHAMAN_VOLCANIC_ERUPTION_LEVEL80_MIN_HIT) * levelScale)));
+    return std::max(amount, std::max(scaledByPct, scaledMin));
+}
+
+bool IsVolcanicPeriodicEffect(AuraEffect const* aurEff)
+{
+    if (!aurEff)
+        return false;
+
+    return aurEff->GetAuraType() == SPELL_AURA_PERIODIC_DAMAGE || aurEff->GetAuraType() == SPELL_AURA_PERIODIC_TRIGGER_SPELL;
 }
 }
 
@@ -699,9 +728,146 @@ public:
     }
 };
 
+class spell_mastery_prepare_shaman_volcanic_spell_script : public AllSpellScript
+{
+public:
+    spell_mastery_prepare_shaman_volcanic_spell_script() : AllSpellScript("spell_mastery_prepare_shaman_volcanic_spell_script", { ALLSPELLHOOK_ON_PREPARE })
+    {
+    }
+
+    void OnSpellPrepare(Spell* spell, Unit* caster, SpellInfo const* spellInfo) override
+    {
+        if (!spell || !caster || !spellInfo || !caster->IsPlayer())
+            return;
+
+        Player* player = caster->ToPlayer();
+        if (!player || player->getClass() != CLASS_SHAMAN)
+            return;
+
+        if (spellInfo->Id != SpellMastery::SPELL_SHAMAN_VOLCANIC_ERUPTION || spell->IsTriggered())
+            return;
+
+        int32 const currentCastTime = spell->GetCastTime();
+        if (currentCastTime < SHAMAN_VOLCANIC_ERUPTION_CAST_TIME_MS)
+            spell->SetSpellMasteryCastTime(SHAMAN_VOLCANIC_ERUPTION_CAST_TIME_MS);
+    }
+};
+
+class spell_sha_volcanic_eruption_damage : public SpellScript
+{
+    PrepareSpellScript(spell_sha_volcanic_eruption_damage);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        return _playerCaster && _playerCaster->getClass() == CLASS_SHAMAN;
+    }
+
+    void HandleOnHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        SetHitDamage(ScaleVolcanicEruptionDamage(_playerCaster, GetSpellInfo(), hitDamage));
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_sha_volcanic_eruption_damage::HandleOnHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+};
+
+class spell_sha_volcanic_eruption_damage_aura : public AuraScript
+{
+    PrepareAuraScript(spell_sha_volcanic_eruption_damage_aura);
+
+    bool Load() override
+    {
+        Unit* caster = GetCaster();
+        if (!caster || !caster->IsPlayer())
+            return false;
+
+        _playerCaster = caster->ToPlayer();
+        return _playerCaster && _playerCaster->getClass() == CLASS_SHAMAN;
+    }
+
+    void CalculatePeriodicDamageAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    {
+        if (!_playerCaster || amount <= 0)
+            return;
+
+        amount = ScaleVolcanicEruptionDamage(_playerCaster, GetSpellInfo(), amount);
+    }
+
+    void CalculatePeriodicTiming(AuraEffect const* aurEff, bool& isPeriodic, int32& amplitude)
+    {
+        if (!IsVolcanicPeriodicEffect(aurEff))
+            return;
+
+        isPeriodic = true;
+        amplitude = SHAMAN_VOLCANIC_ERUPTION_TICK_MS;
+    }
+
+    void HandlePeriodicUpdate(AuraEffect* aurEff)
+    {
+        if (!IsVolcanicPeriodicEffect(aurEff))
+            return;
+
+        if (aurEff->GetPeriodicTimer() > SHAMAN_VOLCANIC_ERUPTION_TICK_MS)
+            aurEff->SetPeriodicTimer(SHAMAN_VOLCANIC_ERUPTION_TICK_MS);
+    }
+
+    void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Aura* aura = GetAura();
+        if (!aura)
+            return;
+
+        aura->SetMaxDuration(SHAMAN_VOLCANIC_ERUPTION_DURATION_MS);
+        aura->SetDuration(SHAMAN_VOLCANIC_ERUPTION_DURATION_MS);
+
+        for (uint8 effectIndex = EFFECT_0; effectIndex < MAX_SPELL_EFFECTS; ++effectIndex)
+        {
+            AuraEffect* effect = aura->GetEffect(effectIndex);
+            if (!IsVolcanicPeriodicEffect(effect))
+                continue;
+
+            if (effect->GetPeriodicTimer() > SHAMAN_VOLCANIC_ERUPTION_TICK_MS)
+                effect->SetPeriodicTimer(SHAMAN_VOLCANIC_ERUPTION_TICK_MS);
+        }
+    }
+
+    void Register() override
+    {
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_sha_volcanic_eruption_damage_aura::CalculatePeriodicDamageAmount, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+        DoEffectCalcPeriodic += AuraEffectCalcPeriodicFn(spell_sha_volcanic_eruption_damage_aura::CalculatePeriodicTiming, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+        DoEffectCalcPeriodic += AuraEffectCalcPeriodicFn(spell_sha_volcanic_eruption_damage_aura::CalculatePeriodicTiming, EFFECT_ALL, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_sha_volcanic_eruption_damage_aura::HandlePeriodicUpdate, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE);
+        OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_sha_volcanic_eruption_damage_aura::HandlePeriodicUpdate, EFFECT_ALL, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+        OnEffectApply += AuraEffectApplyFn(spell_sha_volcanic_eruption_damage_aura::HandleEffectApply, EFFECT_ALL, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+        OnEffectApply += AuraEffectApplyFn(spell_sha_volcanic_eruption_damage_aura::HandleEffectApply, EFFECT_ALL, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+};
+
 void AddSC_spell_mastery_shaman()
 {
     new spell_mastery_prepare_shaman_spell_script();
+    new spell_mastery_prepare_shaman_volcanic_spell_script();
     RegisterSpellScript(spell_sha_chain_lightning_mastery);
     RegisterSpellScript(spell_sha_lava_burst_mastery);
+    RegisterSpellAndAuraScriptPair(spell_sha_volcanic_eruption_damage, spell_sha_volcanic_eruption_damage_aura);
 }
