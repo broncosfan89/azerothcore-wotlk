@@ -36,7 +36,7 @@
 
 namespace SpellMastery
 {
-std::array<ManagedSpellConfig, 19> const ManagedSpellConfigs =
+std::array<ManagedSpellConfig, 20> const ManagedSpellConfigs =
 { {
     { SPELL_MAGE_FIREBALL_RANK_1, SPELL_MAGE_FIREBALL_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -46,6 +46,7 @@ std::array<ManagedSpellConfig, 19> const ManagedSpellConfigs =
     { SPELL_PRIEST_POWER_WORD_SHIELD_RANK_1, SPELL_PRIEST_POWER_WORD_SHIELD_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_PALADIN_CONSECRATION_RANK_1, SPELL_PALADIN_CONSECRATION_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARRIOR_THUNDER_CLAP_RANK_1, SPELL_WARRIOR_THUNDER_CLAP_RANK_9, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_WARRIOR_REVENGE_RANK_1, SPELL_WARRIOR_REVENGE_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_ROGUE_KILLING_SPREE, SPELL_ROGUE_KILLING_SPREE, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_ROGUE_FAN_OF_KNIVES_RANK_1, SPELL_ROGUE_FAN_OF_KNIVES_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_ROGUE_RUPTURE_RANK_1, SPELL_ROGUE_RUPTURE_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -443,6 +444,15 @@ void EnsurePaladinInstantLevelOneSpells(Player* player)
         player->learnSpell(SPELL_PALADIN_CONSECRATION_RANK_1);
 }
 
+void EnsureWarriorInstantLevelOneSpells(Player* player)
+{
+    if (!player || player->getClass() != CLASS_WARRIOR || player->GetLevel() < 1)
+        return;
+
+    if (!player->HasSpell(SPELL_WARRIOR_REVENGE_RANK_1))
+        player->learnSpell(SPELL_WARRIOR_REVENGE_RANK_1);
+}
+
 void EnsurePriestInstantLevelOneSpells(Player* player)
 {
     if (!player || player->getClass() != CLASS_PRIEST || player->GetLevel() < 1)
@@ -569,6 +579,7 @@ public:
         SpellMastery::EnsureShamanInstantLevelOneSpells(player);
         SpellMastery::EnsureMageInstantLevelOneSpells(player);
         SpellMastery::EnsurePaladinInstantLevelOneSpells(player);
+        SpellMastery::EnsureWarriorInstantLevelOneSpells(player);
         SpellMastery::EnsurePriestInstantLevelOneSpells(player);
         SpellMastery::EnsureDruidInstantLevelOneSpells(player);
         SpellMastery::EnsureHunterInstantLevelOneSpells(player);
@@ -591,6 +602,7 @@ public:
         SpellMastery::EnsureShamanInstantLevelOneSpells(player);
         SpellMastery::EnsureMageInstantLevelOneSpells(player);
         SpellMastery::EnsurePaladinInstantLevelOneSpells(player);
+        SpellMastery::EnsureWarriorInstantLevelOneSpells(player);
         SpellMastery::EnsurePriestInstantLevelOneSpells(player);
         SpellMastery::EnsureDruidInstantLevelOneSpells(player);
         SpellMastery::EnsureHunterInstantLevelOneSpells(player);

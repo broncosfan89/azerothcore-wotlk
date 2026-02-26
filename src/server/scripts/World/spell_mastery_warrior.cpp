@@ -17,18 +17,25 @@
 
 #include "spell_mastery_core.h"
 
+#include "Cell.h"
+#include "CellImpl.h"
 #include "GameTime.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "Player.h"
 #include "Spell.h"
 #include "SpellAuras.h"
 #include "SpellMgr.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "UnitScript.h"
 
 #include <algorithm>
 #include <cmath>
+#include <list>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 namespace
 {
@@ -49,11 +56,42 @@ struct ThunderClapEchoToken
     uint32 ExpiresAtMs = 0;
 };
 
+struct RevengeMasteryEffects
+{
+    float DamageBonusPct = 0.0f;
+    float BronzeHealPctMaxHealth = 0.0f;
+    float SilverDamageReductionPct = 0.0f;
+    uint32 SilverDurationMs = 0;
+    uint8 GoldExtraTargets = 0;
+    float DiamondReflectPct = 0.0f;
+    uint32 DiamondDurationMs = 0;
+};
+
+struct RevengeDefensiveState
+{
+    float DamageReductionPct = 0.0f;
+    float ReflectPct = 0.0f;
+    uint32 ExpiresAtMs = 0;
+};
+
+struct RevengeGoldChainToken
+{
+    uint8 PendingCasts = 0;
+    uint32 ExpiresAtMs = 0;
+};
+
 uint32 constexpr THUNDER_CLAP_XP_GUARD_MS = 350;
 uint32 constexpr THUNDER_CLAP_ECHO_TOKEN_TTL_MS = 2000;
+uint32 constexpr REVENGE_XP_GUARD_MS = 300;
+uint32 constexpr REVENGE_GOLD_CHAIN_TOKEN_TTL_MS = 2000;
+float constexpr REVENGE_GOLD_EXTRA_TARGET_RANGE = 8.0f;
 
 std::unordered_map<uint32, ThunderClapEchoToken> ThunderClapEchoTokens;
 std::mutex ThunderClapEchoTokensMutex;
+std::unordered_map<uint32, RevengeDefensiveState> RevengeDefensiveStates;
+std::unordered_map<uint32, RevengeGoldChainToken> RevengeGoldChainTokens;
+std::mutex RevengeStateMutex;
+thread_local bool RevengeReflectGuard = false;
 
 ThunderClapMasteryEffects BuildThunderClapMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -118,12 +156,98 @@ Aura* FindRendAuraByCaster(Unit* target, ObjectGuid casterGuid)
 
     return nullptr;
 }
+
+RevengeMasteryEffects BuildRevengeMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    RevengeMasteryEffects effects;
+
+    uint8 const ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 const bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
+    if (totalMasteryLevels > 0)
+        effects.DamageBonusPct = float(totalMasteryLevels) * 5.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeHealPctMaxHealth = 1.0f + (float(bronzeLevel - 1) * (2.0f / 9.0f)); // 1% -> 3%
+
+    if (silverLevel > 0)
+    {
+        effects.SilverDamageReductionPct = 3.0f + (float(silverLevel - 1) * (9.0f / 9.0f)); // 3% -> 12%
+        effects.SilverDurationMs = 3000 + (uint32(silverLevel) * 500);
+    }
+
+    if (goldLevel > 0)
+        effects.GoldExtraTargets = goldLevel; // +1..10 additional targets.
+
+    if (diamondLevel > 0)
+    {
+        effects.DiamondReflectPct = 5.0f + (float(diamondLevel - 1) * (10.0f / 9.0f)); // 5% -> 15%
+        effects.DiamondDurationMs = 4000 + (uint32(diamondLevel) * 500);
+    }
+
+    return effects;
+}
+
+void ApplyOrRefreshRevengeDefensiveState(Player* warrior, RevengeMasteryEffects const& effects)
+{
+    if (!warrior)
+        return;
+
+    uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    uint32 const silverExpiresAt = (effects.SilverDamageReductionPct > 0.0f && effects.SilverDurationMs > 0) ? nowMs + effects.SilverDurationMs : 0;
+    uint32 const diamondExpiresAt = (effects.DiamondReflectPct > 0.0f && effects.DiamondDurationMs > 0) ? nowMs + effects.DiamondDurationMs : 0;
+    uint32 const expiresAt = std::max(silverExpiresAt, diamondExpiresAt);
+    if (!expiresAt)
+        return;
+
+    std::lock_guard<std::mutex> lock(RevengeStateMutex);
+    RevengeDefensiveState& state = RevengeDefensiveStates[uint32(warrior->GetGUID().GetCounter())];
+    if (state.ExpiresAtMs <= nowMs)
+    {
+        state.DamageReductionPct = 0.0f;
+        state.ReflectPct = 0.0f;
+    }
+
+    state.DamageReductionPct = std::max(state.DamageReductionPct, effects.SilverDamageReductionPct);
+    state.ReflectPct = std::max(state.ReflectPct, effects.DiamondReflectPct);
+    state.ExpiresAtMs = std::max(state.ExpiresAtMs, expiresAt);
+}
+
+bool GetActiveRevengeDefensiveState(uint32 warriorGuid, RevengeDefensiveState& outState)
+{
+    std::lock_guard<std::mutex> lock(RevengeStateMutex);
+    auto itr = RevengeDefensiveStates.find(warriorGuid);
+    if (itr == RevengeDefensiveStates.end())
+        return false;
+
+    uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    if (itr->second.ExpiresAtMs <= nowMs)
+    {
+        RevengeDefensiveStates.erase(itr);
+        return false;
+    }
+
+    outState = itr->second;
+    return true;
+}
 }
 
 void ClearSpellMasteryWarriorRuntimeStateForPlayer(uint32 guid)
 {
-    std::lock_guard<std::mutex> lock(ThunderClapEchoTokensMutex);
-    ThunderClapEchoTokens.erase(guid);
+    {
+        std::lock_guard<std::mutex> lock(ThunderClapEchoTokensMutex);
+        ThunderClapEchoTokens.erase(guid);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(RevengeStateMutex);
+        RevengeDefensiveStates.erase(guid);
+        RevengeGoldChainTokens.erase(guid);
+    }
 }
 
 class spell_war_thunder_clap_mastery : public SpellScript
@@ -301,7 +425,199 @@ private:
     uint32 _rendSpellId = 0;
 };
 
+class spell_war_revenge_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_war_revenge_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_WARRIOR_REVENGE_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildRevengeMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+        _casterGuidLow = uint32(_playerCaster->GetGUID().GetCounter());
+
+        if (_isTriggeredCast)
+        {
+            uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+            std::lock_guard<std::mutex> lock(RevengeStateMutex);
+            auto itr = RevengeGoldChainTokens.find(_casterGuidLow);
+            if (itr != RevengeGoldChainTokens.end() && itr->second.PendingCasts > 0 && itr->second.ExpiresAtMs > nowMs)
+            {
+                _isGoldChainCast = true;
+                if (--itr->second.PendingCasts == 0)
+                    RevengeGoldChainTokens.erase(itr);
+            }
+        }
+
+        return true;
+    }
+
+    void HandleDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+        if (_effects.DamageBonusPct > 0.0f)
+        {
+            int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.DamageBonusPct / 100.0f))));
+            hitDamage = std::max(hitDamage, scaledDamage);
+        }
+
+        SetHitDamage(hitDamage);
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, REVENGE_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        if (_isTriggeredCast)
+            return;
+
+        TryApplyBronzeHeal();
+        ApplyOrRefreshRevengeDefensiveState(_playerCaster, _effects);
+        TryTriggerGoldAdditionalTargets(target);
+    }
+
+    void TryApplyBronzeHeal()
+    {
+        if (_effects.BronzeHealPctMaxHealth <= 0.0f || !_playerCaster->IsAlive())
+            return;
+
+        uint32 const maxHealth = std::max<uint32>(1, _playerCaster->GetMaxHealth());
+        uint32 const healAmount = std::max<uint32>(1, uint32(std::lround(float(maxHealth) * (_effects.BronzeHealPctMaxHealth / 100.0f))));
+        HealInfo healInfo(_playerCaster, _playerCaster, healAmount, GetSpellInfo(), GetSpellInfo()->GetSchoolMask());
+        _playerCaster->HealBySpell(healInfo);
+    }
+
+    void TryTriggerGoldAdditionalTargets(Unit* primaryTarget)
+    {
+        if (_goldTriggered || _effects.GoldExtraTargets == 0 || !primaryTarget)
+            return;
+
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(_playerCaster, _playerCaster, REVENGE_GOLD_EXTRA_TARGET_RANGE);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(_playerCaster, nearbyUnits, check);
+        Cell::VisitObjects(_playerCaster, searcher, REVENGE_GOLD_EXTRA_TARGET_RANGE);
+
+        std::vector<Unit*> secondaryTargets;
+        secondaryTargets.reserve(_effects.GoldExtraTargets);
+        for (Unit* target : nearbyUnits)
+        {
+            if (!target || target == primaryTarget || !_playerCaster->IsValidAttackTarget(target))
+                continue;
+
+            if (!_playerCaster->IsWithinDistInMap(target, REVENGE_GOLD_EXTRA_TARGET_RANGE))
+                continue;
+
+            secondaryTargets.push_back(target);
+            if (secondaryTargets.size() >= _effects.GoldExtraTargets)
+                break;
+        }
+
+        if (secondaryTargets.empty())
+            return;
+
+        uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+        {
+            std::lock_guard<std::mutex> lock(RevengeStateMutex);
+            RevengeGoldChainToken& token = RevengeGoldChainTokens[_casterGuidLow];
+            token.PendingCasts = std::min<uint8>(uint8(secondaryTargets.size()), uint8(30));
+            token.ExpiresAtMs = nowMs + REVENGE_GOLD_CHAIN_TOKEN_TTL_MS;
+        }
+
+        _goldTriggered = true;
+        for (Unit* target : secondaryTargets)
+            _playerCaster->CastSpell(target, _config->AllowedSpellId, TRIGGERED_FULL_MASK);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_war_revenge_mastery::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_war_revenge_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    RevengeMasteryEffects _effects;
+
+    bool _isTriggeredCast = false;
+    bool _isGoldChainCast = false;
+    bool _xpAwarded = false;
+    bool _goldTriggered = false;
+    uint32 _casterGuidLow = 0;
+};
+
+class spell_mastery_warrior_unit_script : public UnitScript
+{
+public:
+    spell_mastery_warrior_unit_script() : UnitScript("spell_mastery_warrior_unit_script", true, { UNITHOOK_ON_DAMAGE }) { }
+
+    void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
+    {
+        if (!attacker || !victim || attacker == victim || !damage)
+            return;
+
+        Player* warrior = victim->ToPlayer();
+        if (!warrior || warrior->getClass() != CLASS_WARRIOR)
+            return;
+
+        RevengeDefensiveState state;
+        if (!GetActiveRevengeDefensiveState(uint32(warrior->GetGUID().GetCounter()), state))
+            return;
+
+        if (!warrior->IsValidAttackTarget(attacker))
+            return;
+
+        if (state.DamageReductionPct > 0.0f)
+        {
+            uint32 const reducedDamage = uint32(std::lround(float(damage) * (1.0f - (state.DamageReductionPct / 100.0f))));
+            damage = std::max<uint32>(1, reducedDamage);
+        }
+
+        if (state.ReflectPct <= 0.0f || RevengeReflectGuard || !attacker->IsAlive())
+            return;
+
+        uint32 const reflectDamage = std::max<uint32>(1, uint32(std::lround(float(damage) * (state.ReflectPct / 100.0f))));
+        SpellInfo const* revengeSpellInfo = sSpellMgr->GetSpellInfo(SpellMastery::SPELL_WARRIOR_REVENGE_RANK_1);
+        if (!revengeSpellInfo)
+            return;
+
+        RevengeReflectGuard = true;
+        SpellNonMeleeDamage damageInfo(warrior, attacker, revengeSpellInfo, revengeSpellInfo->SchoolMask);
+        damageInfo.damage = reflectDamage;
+        warrior->SendSpellNonMeleeDamageLog(&damageInfo);
+        warrior->DealSpellDamage(&damageInfo, false);
+        RevengeReflectGuard = false;
+    }
+};
+
 void AddSC_spell_mastery_warrior()
 {
+    new spell_mastery_warrior_unit_script();
     RegisterSpellScript(spell_war_thunder_clap_mastery);
+    RegisterSpellScript(spell_war_revenge_mastery);
 }
