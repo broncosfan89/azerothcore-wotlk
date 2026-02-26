@@ -1,6 +1,7 @@
 param(
   [string]$InputDbc = "build/bin/Release/Data/dbc/Item.dbc",
   [string]$OutputMpq = "tools/client_patch/patch-Z.MPQ",
+  [string]$SourceList = "tools/client_patch/mythic_wotlk_source_items.txt",
   [switch]$PatchInputInPlace
 )
 
@@ -25,13 +26,17 @@ if (!(Test-Path $InputDbc)) {
   throw "Input Item.dbc not found: $InputDbc"
 }
 
+if (!(Test-Path $SourceList)) {
+  throw "Source item list not found: $SourceList"
+}
+
 if (!(Get-Command python -ErrorAction SilentlyContinue)) {
   throw "Python not found in PATH."
 }
 
 New-Item -ItemType Directory -Path (Split-Path $PatchedDbc -Parent) -Force | Out-Null
 
-$patchArgs = @($PatchTool, "--input", $InputDbc, "--output", $PatchedDbc)
+$patchArgs = @($PatchTool, "--input", $InputDbc, "--output", $PatchedDbc, "--source-list", $SourceList)
 if ($PatchInputInPlace) {
   $patchArgs += "--in-place"
 }

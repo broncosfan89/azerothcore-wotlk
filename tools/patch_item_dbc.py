@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 """
-Patch WotLK Item.dbc by cloning known source entries into custom IDs.
-
-Use case:
-- Source entries: 35570..35578 (Utgarde Keep heroic items)
-- Target entries: 59001..60509 (Mythic 0..15 custom clones)
+Patch WotLK Item.dbc by cloning source entries into Mythic IDs.
 """
 
 from __future__ import annotations
@@ -15,7 +11,7 @@ import struct
 from typing import Dict, List, Tuple
 
 
-SOURCE_ITEM_IDS: Tuple[int, ...] = (
+DEFAULT_SOURCE_ITEM_IDS: Tuple[int, ...] = (
     35570,
     35571,
     35572,
@@ -28,26 +24,42 @@ SOURCE_ITEM_IDS: Tuple[int, ...] = (
 )
 MYTHIC_MIN_LEVEL = 0
 MYTHIC_MAX_LEVEL = 15
-TARGET_ITEM_BASE = 59000
-TARGET_ITEM_STRIDE = 100
+TARGET_ITEM_BASE = 70000000
+TARGET_ITEM_STRIDE = 1000000
 
 
-def build_mapping() -> Tuple[Tuple[int, int], ...]:
+def load_source_ids(path: str | None) -> Tuple[int, ...]:
+    if not path:
+        return DEFAULT_SOURCE_ITEM_IDS
+
+    source_ids: List[int] = []
+    with open(path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            source_ids.append(int(line))
+
+    if not source_ids:
+        raise RuntimeError(f"No source IDs loaded from {path}")
+
+    return tuple(dict.fromkeys(source_ids))
+
+
+def build_mapping(source_ids: Tuple[int, ...]) -> Tuple[Tuple[int, int], ...]:
     mapping: List[Tuple[int, int]] = []
     for level in range(MYTHIC_MIN_LEVEL, MYTHIC_MAX_LEVEL + 1):
-        for slot, source_id in enumerate(SOURCE_ITEM_IDS, start=1):
-            target_id = TARGET_ITEM_BASE + (level * TARGET_ITEM_STRIDE) + slot
+        for source_id in source_ids:
+            target_id = TARGET_ITEM_BASE + (level * TARGET_ITEM_STRIDE) + source_id
             mapping.append((source_id, target_id))
     return tuple(mapping)
-
-
-MAPPING = build_mapping()
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Patch Item.dbc with custom item ID clones.")
     parser.add_argument("--input", required=True, help="Path to input Item.dbc")
     parser.add_argument("--output", required=True, help="Path to output Item.dbc")
+    parser.add_argument("--source-list", help="Optional text file with one source item ID per line")
     parser.add_argument("--in-place", action="store_true", help="Also overwrite the input file with patched output")
     return parser.parse_args()
 
@@ -82,19 +94,19 @@ def read_dbc(path: str) -> Tuple[bytes, int, int, int, int, List[Tuple[int, ...]
     return magic, record_count, field_count, record_size, string_size, records
 
 
-def patch_records(records: List[Tuple[int, ...]]) -> List[Tuple[int, ...]]:
+def patch_records(records: List[Tuple[int, ...]], mapping: Tuple[Tuple[int, int], ...]) -> List[Tuple[int, ...]]:
     by_id: Dict[int, Tuple[int, ...]] = {rec[0]: rec for rec in records}
 
     # Ensure all source rows exist.
-    missing = [src for src, _ in MAPPING if src not in by_id]
+    missing = [src for src, _ in mapping if src not in by_id]
     if missing:
         raise RuntimeError(f"Source entries missing in Item.dbc: {missing}")
 
-    target_ids = {dst for _, dst in MAPPING}
+    target_ids = {dst for _, dst in mapping}
     kept = [rec for rec in records if rec[0] not in target_ids]
 
     # Clone source records to target IDs.
-    for src, dst in MAPPING:
+    for src, dst in mapping:
         src_rec = by_id[src]
         cloned = (dst,) + src_rec[1:]
         kept.append(cloned)
@@ -115,9 +127,11 @@ def write_dbc(path: str, records: List[Tuple[int, ...]]) -> None:
 
 def main() -> int:
     args = parse_args()
+    source_ids = load_source_ids(args.source_list)
+    mapping = build_mapping(source_ids)
 
     _, _, _, _, _, records = read_dbc(args.input)
-    patched = patch_records(records)
+    patched = patch_records(records, mapping)
     write_dbc(args.output, patched)
 
     if args.in_place:
@@ -126,8 +140,9 @@ def main() -> int:
     print(f"Patched Item.dbc written to: {args.output}")
     if args.in_place:
         print(f"Patched input in place: {args.input}")
-    print("Added/updated entries: 59001..60509 (slots 01..09 for Mythic levels 0..15)")
-    print("Source entries used for cloning: 35570..35578")
+    print(f"Added/updated entries for {len(source_ids)} source items across Mythic levels {MYTHIC_MIN_LEVEL}..{MYTHIC_MAX_LEVEL}")
+    if args.source_list:
+        print(f"Source list file: {args.source_list}")
     return 0
 
 

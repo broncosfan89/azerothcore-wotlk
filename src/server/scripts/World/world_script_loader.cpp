@@ -30,6 +30,7 @@ void AddSC_achievement_scripts();
 void AddSC_chat_log(); // location: scripts\World\chat_log.cpp
 void AddSC_action_ip_logger(); // location: scripts\World\action_ip_logger.cpp
 void AddSC_player_scripts();
+void AddSC_mythic_wotlk_dungeons();
 void AddSC_mythic_utgarde_item_effect_scaling();
 void AddSC_spell_mastery_fireball();
 void AddSC_npc_stave_of_ancients();
@@ -56,6 +57,7 @@ void AddWorldScripts()
     AddSC_chat_log(); // location: scripts\World\chat_log.cpp
     AddSC_action_ip_logger(); // location: scripts\World\action_ip_logger.cpp
     AddSC_player_scripts();
+    AddSC_mythic_wotlk_dungeons();
     AddSC_mythic_utgarde_item_effect_scaling();
     AddSC_spell_mastery_fireball();
     AddSC_npc_stave_of_ancients();

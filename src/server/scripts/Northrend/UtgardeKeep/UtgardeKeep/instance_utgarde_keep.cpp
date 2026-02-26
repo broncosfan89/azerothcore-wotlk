@@ -37,6 +37,10 @@ uint32 constexpr ITEM_EMBLEM_OF_TRIUMPH = 47241;
 uint8 constexpr MYTHIC_UTGARDE_LEVEL_CAP = 15;
 uint32 constexpr MYTHIC_UTGARDE_ITEM_BASE = 59000;
 uint32 constexpr MYTHIC_UTGARDE_ITEM_STRIDE = 100;
+uint32 constexpr MYTHIC_WOTLK_ITEM_BASE = 70000000;
+uint32 constexpr MYTHIC_WOTLK_ITEM_STRIDE = 1000000;
+uint32 constexpr MYTHIC_ITEM_SOURCE_CLASS_WEAPON = 2;
+uint32 constexpr MYTHIC_ITEM_SOURCE_CLASS_ARMOR = 4;
 float constexpr MYTHIC_BERSERK_HEALTH_THRESHOLD_PCT = 30.0f;
 float constexpr MYTHIC_BERSERK_DAMAGE_MULTIPLIER = 1.30f;
 uint8 constexpr MYTHIC_BERSERK_MIN_LEVEL = 5;
@@ -101,6 +105,40 @@ uint32 GetRandomMythicUtgardeItemForDataId(uint32 dataId, uint8 mythicLevel)
 
     uint8 const poolSlot = (*pool)[urand(0, uint32(pool->size() - 1))];
     return GetMythicUtgardeItemIdForTierAndSlot(mythicLevel, poolSlot);
+}
+
+uint32 GetMythicScaledItemEntry(uint32 sourceEntry, uint8 mythicLevel)
+{
+    if (mythicLevel > MYTHIC_UTGARDE_LEVEL_CAP || sourceEntry >= MYTHIC_WOTLK_ITEM_STRIDE || sourceEntry >= MYTHIC_WOTLK_ITEM_BASE)
+        return 0;
+
+    return MYTHIC_WOTLK_ITEM_BASE + (uint32(mythicLevel) * MYTHIC_WOTLK_ITEM_STRIDE) + sourceEntry;
+}
+
+void RemapLootItemsToMythicLevel(LootItemList& lootItems, uint8 mythicLevel)
+{
+    if (mythicLevel > MYTHIC_UTGARDE_LEVEL_CAP)
+        return;
+
+    for (LootItem& lootItem : lootItems)
+    {
+        if (lootItem.itemid >= MYTHIC_WOTLK_ITEM_BASE)
+            continue;
+
+        ItemTemplate const* sourceTemplate = sObjectMgr->GetItemTemplate(lootItem.itemid);
+        if (!sourceTemplate)
+            continue;
+
+        if (sourceTemplate->Class != MYTHIC_ITEM_SOURCE_CLASS_WEAPON && sourceTemplate->Class != MYTHIC_ITEM_SOURCE_CLASS_ARMOR)
+            continue;
+
+        uint32 const mappedItemEntry = GetMythicScaledItemEntry(lootItem.itemid, mythicLevel);
+        if (!mappedItemEntry)
+            continue;
+
+        if (sObjectMgr->GetItemTemplate(mappedItemEntry))
+            lootItem.itemid = mappedItemEntry;
+    }
 }
 }
 
@@ -210,7 +248,7 @@ public:
                 return;
 
             if (IsMythicLootBossEntry(creature->GetEntry()))
-                creature->SetLootMode(LOOT_MODE_HARD_MODE_1);
+                creature->SetLootMode(LOOT_MODE_DEFAULT);
             else
                 creature->SetLootMode(0);
 
@@ -331,7 +369,7 @@ public:
                 return;
 
             if (Creature* creature = GetCreature(dataId))
-                creature->SetLootMode(LOOT_MODE_HARD_MODE_1);
+                creature->SetLootMode(LOOT_MODE_DEFAULT);
         }
 
         Player* GetFallbackLootRecipient() const
@@ -362,7 +400,7 @@ public:
                 return;
             }
 
-            creature->SetLootMode(LOOT_MODE_HARD_MODE_1);
+            creature->SetLootMode(LOOT_MODE_DEFAULT);
 
             Player* lootRecipient = creature->GetLootRecipient();
             if (!lootRecipient || !lootRecipient->IsInMap(creature))
@@ -381,17 +419,7 @@ public:
             if (creature->GetLootMode())
                 creature->loot.generateMoneyLoot(creature->GetCreatureTemplate()->mingold, creature->GetCreatureTemplate()->maxgold);
 
-            creature->loot.items.clear();
-            if (uint32 forcedItemId = GetRandomMythicUtgardeItemForDataId(dataId, MythicLevel))
-            {
-                if (sObjectMgr->GetItemTemplate(forcedItemId))
-                {
-                    LootStoreItem forcedItem(forcedItemId, 0, 100.0f, false, LOOT_MODE_HARD_MODE_1, 0, 1, 1);
-                    creature->loot.AddItem(forcedItem);
-                }
-                else
-                    LOG_INFO("scripts", "UK Mythic loot rebuild warning: missing mythic item template {} at level {}", forcedItemId, uint32(MythicLevel));
-            }
+            RemapLootItemsToMythicLevel(creature->loot.items, MythicLevel);
 
             std::string const recipientGuid = lootRecipient ? lootRecipient->GetGUID().ToString() : "none";
             LOG_INFO("scripts", "UK Mythic loot rebuild result: bossEntry {} dataId {} lootMode {} recipient {} items {} gold {} empty {}",
@@ -677,7 +705,7 @@ public:
                         }
 
                         c->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE | UNIT_DYNFLAG_TAPPED | UNIT_DYNFLAG_TAPPED_BY_PLAYER);
-                        c->SetLootMode(MythicEnabled ? LOOT_MODE_HARD_MODE_1 : LOOT_MODE_DEFAULT);
+                        c->SetLootMode(LOOT_MODE_DEFAULT);
                         c->loot.clear();
                         if (uint32 lootid = c->GetCreatureTemplate()->lootid)
                             c->loot.FillLoot(lootid, LootTemplates_Creature, c->GetLootRecipient(), false, false, c->GetLootMode(), c);
@@ -698,7 +726,7 @@ public:
 
                         c->AI()->DoAction(-1);
                         c->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE | UNIT_DYNFLAG_TAPPED | UNIT_DYNFLAG_TAPPED_BY_PLAYER);
-                        c->SetLootMode(MythicEnabled ? LOOT_MODE_HARD_MODE_1 : LOOT_MODE_DEFAULT);
+                        c->SetLootMode(LOOT_MODE_DEFAULT);
                         c->loot.clear();
                         if (uint32 lootid = c->GetCreatureTemplate()->lootid)
                             c->loot.FillLoot(lootid, LootTemplates_Creature, c->GetLootRecipient(), false, false, c->GetLootMode(), c);
