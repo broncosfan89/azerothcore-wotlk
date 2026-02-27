@@ -157,6 +157,25 @@ Aura* FindRendAuraByCaster(Unit* target, ObjectGuid casterGuid)
     return nullptr;
 }
 
+bool IsRevengeRankSpellId(uint32 spellId)
+{
+    switch (spellId)
+    {
+        case 6572:  // Revenge Rank 1
+        case 6574:  // Revenge Rank 2
+        case 7379:  // Revenge Rank 3
+        case 11600: // Revenge Rank 4
+        case 11601: // Revenge Rank 5
+        case 25288: // Revenge Rank 6
+        case 25269: // Revenge Rank 7
+        case 30357: // Revenge Rank 8
+        case 57823: // Revenge Rank 9
+            return true;
+        default:
+            return false;
+    }
+}
+
 RevengeMasteryEffects BuildRevengeMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
     RevengeMasteryEffects effects;
@@ -435,7 +454,11 @@ class spell_war_revenge_mastery : public SpellScript
             return false;
 
         _playerCaster = GetCaster()->ToPlayer();
-        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        _castSpellId = GetSpellInfo()->Id;
+        _config = SpellMastery::GetManagedSpellConfigForSpell(_castSpellId);
+        if ((!_config || _config->BaseSpellId != SpellMastery::SPELL_WARRIOR_REVENGE_RANK_1) && IsRevengeRankSpellId(_castSpellId))
+            _config = SpellMastery::GetManagedSpellConfigByBaseSpell(SpellMastery::SPELL_WARRIOR_REVENGE_RANK_1);
+
         if (!_config || _config->BaseSpellId != SpellMastery::SPELL_WARRIOR_REVENGE_RANK_1)
             return false;
 
@@ -486,11 +509,7 @@ class spell_war_revenge_mastery : public SpellScript
         if (!target || !_playerCaster->IsHostileTo(target))
             return;
 
-        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, REVENGE_XP_GUARD_MS))
-        {
-            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
-            _xpAwarded = true;
-        }
+        TryAwardXp();
 
         if (_isTriggeredCast)
             return;
@@ -549,12 +568,34 @@ class spell_war_revenge_mastery : public SpellScript
 
         _goldTriggered = true;
         for (Unit* target : secondaryTargets)
-            _playerCaster->CastSpell(target, _config->AllowedSpellId, TRIGGERED_FULL_MASK);
+            _playerCaster->CastSpell(target, _castSpellId, TRIGGERED_FULL_MASK);
+    }
+
+    void HandleOnHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        TryAwardXp();
+    }
+
+    void TryAwardXp()
+    {
+        if (_xpAwarded || _isTriggeredCast)
+            return;
+
+        if (SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, REVENGE_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
     }
 
     void Register() override
     {
         OnEffectHitTarget += SpellEffectFn(spell_war_revenge_mastery::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        OnHit += SpellHitFn(spell_war_revenge_mastery::HandleOnHit);
         AfterHit += SpellHitFn(spell_war_revenge_mastery::HandleAfterHit);
     }
 
@@ -569,6 +610,7 @@ private:
     bool _xpAwarded = false;
     bool _goldTriggered = false;
     uint32 _casterGuidLow = 0;
+    uint32 _castSpellId = 0;
 };
 
 class spell_mastery_warrior_unit_script : public UnitScript

@@ -55,7 +55,7 @@ struct SerpentStingMasteryEffects
 uint32 constexpr VOLLEY_XP_GUARD_MS = 8000;
 float constexpr VOLLEY_DIAMOND_BURST_RADIUS = 6.0f;
 int32 constexpr VOLLEY_GOLD_BASE_TICK_INTERVAL_MS = 1000;
-int32 constexpr VOLLEY_GOLD_MIN_TICK_INTERVAL_MS = 500;
+int32 constexpr VOLLEY_GOLD_MIN_TICK_INTERVAL_MS = 750;
 uint32 constexpr SERPENT_STING_XP_GUARD_MS = 250;
 int32 constexpr SERPENT_STING_BASE_TICK_INTERVAL_MS = 3000;
 int32 constexpr SERPENT_STING_MIN_TICK_INTERVAL_MS = 1000;
@@ -73,9 +73,9 @@ VolleyMasteryEffects BuildVolleyMasteryEffects(SpellMastery::SpellMasteryProgres
     uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
     uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
-    // Damage scaling spans all tiers: +3% per mastery level (max +150% at Diamond 10).
+    // Damage scaling spans all tiers: +1.5% per mastery level (max +75% at Diamond 10).
     if (totalMasteryLevels > 0)
-        effects.IronDamageBonusPct = float(totalMasteryLevels) * 3.0f;
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 1.5f;
 
     // Bronze: increase Volley radius.
     if (bronzeLevel > 0)
@@ -94,7 +94,7 @@ VolleyMasteryEffects BuildVolleyMasteryEffects(SpellMastery::SpellMasteryProgres
 
     // Diamond: add AoE burst damage around each target hit by Volley.
     if (diamondLevel > 0)
-        effects.DiamondBurstDamagePct = 10.0f + (float(diamondLevel - 1) * (20.0f / 9.0f)); // 10% -> 30%
+        effects.DiamondBurstDamagePct = 5.0f + (float(diamondLevel - 1) * (10.0f / 9.0f)); // 5% -> 15%
 
     return effects;
 }
@@ -116,7 +116,7 @@ SerpentStingMasteryEffects BuildSerpentStingMasteryEffects(SpellMastery::SpellMa
 
     // Damage scaling follows full mastery progression (Iron -> Diamond).
     if (totalMasteryLevels > 0)
-        effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 6.0f;
+        effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 18.0f;
 
     // Silver: faster tick cadence.
     if (silverLevel > 0)

@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: Spell Mastery Tracker
+## Notes: Tracks Spell Mastery feed and adds Volley mastery tooltip details
+## Author: Local
+## Version: 0.1.0
+## SavedVariables: SMT_DB
+
+SpellMasteryTracker.lua

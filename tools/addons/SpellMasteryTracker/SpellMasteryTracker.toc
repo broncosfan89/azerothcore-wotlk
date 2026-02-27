@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: Spell Mastery Tracker
+## Notes: Tracks Spell Mastery updates from server addon feed.
+## Author: Local
+## Version: 1.0.0
+## SavedVariables: SMT_DB
+
+SpellMasteryTracker.lua
