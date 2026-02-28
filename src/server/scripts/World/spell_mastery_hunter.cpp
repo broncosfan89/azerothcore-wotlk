@@ -61,6 +61,7 @@ int32 constexpr SERPENT_STING_BASE_TICK_INTERVAL_MS = 3000;
 int32 constexpr SERPENT_STING_MIN_TICK_INTERVAL_MS = 1000;
 float constexpr SERPENT_STING_GOLD_SPREAD_RADIUS = 10.0f;
 float constexpr SERPENT_STING_DIAMOND_DETONATION_RADIUS = 10.0f;
+float constexpr SERPENT_STING_RANGED_AP_TICK_SCALAR = 0.20f;
 
 VolleyMasteryEffects BuildVolleyMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -116,7 +117,7 @@ SerpentStingMasteryEffects BuildSerpentStingMasteryEffects(SpellMastery::SpellMa
 
     // Damage scaling follows full mastery progression (Iron -> Diamond).
     if (totalMasteryLevels > 0)
-        effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 18.0f;
+        effects.BronzeDamageBonusPct = float(totalMasteryLevels) * 30.0f;
 
     // Silver: faster tick cadence.
     if (silverLevel > 0)
@@ -452,11 +453,16 @@ class spell_hun_serpent_sting_mastery_aura : public AuraScript
 
         amount = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), amount);
 
-        if (_effects.BronzeDamageBonusPct <= 0.0f)
-            return;
+        if (_effects.BronzeDamageBonusPct > 0.0f)
+        {
+            int32 const scaledAmount = int32(std::lround(float(amount) * (1.0f + (_effects.BronzeDamageBonusPct / 100.0f))));
+            amount = std::max(amount, scaledAmount);
+        }
 
-        int32 const scaledAmount = int32(std::lround(float(amount) * (1.0f + (_effects.BronzeDamageBonusPct / 100.0f))));
-        amount = std::max(amount, scaledAmount);
+        // Gear/level growth: add a direct ranged attack power tick contribution.
+        float const rangedAttackPower = std::max(0.0f, _playerCaster->GetTotalAttackPowerValue(RANGED_ATTACK));
+        int32 const rangedApBonus = std::max<int32>(0, int32(std::lround(rangedAttackPower * SERPENT_STING_RANGED_AP_TICK_SCALAR)));
+        amount = std::max<int32>(1, amount + rangedApBonus);
     }
 
     void CalculatePeriodicTiming(AuraEffect const* /*aurEff*/, bool& isPeriodic, int32& amplitude)
