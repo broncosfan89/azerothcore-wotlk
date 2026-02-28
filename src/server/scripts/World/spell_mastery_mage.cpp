@@ -60,6 +60,81 @@ struct FlamestrikeMasteryEffects
     bool HasDiamondCastTime = false;
 };
 
+struct FrostboltMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    float BronzeCritVsChilledPct = 0.0f;
+    float SilverIceLanceMarkPct = 0.0f;
+    float GoldBonusHitPct = 0.0f;
+    float DiamondCastTimeMultiplier = 1.0f;
+    bool HasDiamondCastTime = false;
+};
+
+struct IceLanceMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    float BronzeVsChilledBonusPct = 0.0f;
+    float SilverCritVsChilledPct = 0.0f;
+    float GoldRicochetPct = 0.0f;
+    float DiamondSecondLancePct = 0.0f;
+};
+
+struct BlizzardMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    float BronzeRadiusMultiplier = 1.0f;
+    float SilverBonusDamagePct = 0.0f;
+    float GoldHailChancePct = 0.0f;
+    float GoldHailDamagePct = 40.0f;
+    float DiamondBonusDamagePct = 0.0f;
+};
+
+struct ConeOfColdMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    float BronzeRadiusMultiplier = 1.0f;
+    float SilverVulnerabilityPct = 0.0f;
+    float GoldBonusDamagePct = 0.0f;
+    float DiamondSecondPulsePct = 0.0f;
+};
+
+struct ArcaneBlastMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    float BronzeManaRefundPct = 0.0f;
+    float SilverPerChargeBonusPct = 0.0f;
+    float GoldAtFourChargesBonusPct = 0.0f;
+    float DiamondAtFourChargesSplashPct = 0.0f;
+};
+
+struct ArcaneMissilesMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    int32 BronzeTickReductionMs = 0;
+    float SilverManaReturnPct = 0.0f;
+    float GoldExtraMissileChancePct = 0.0f;
+    float GoldExtraMissileDamagePct = 40.0f;
+    float DiamondCleavePct = 0.0f;
+};
+
+struct ArcaneBarrageMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    uint8 BronzeExtraTargets = 0;
+    float SilverPerChargeBonusPct = 0.0f;
+    float GoldFlatBonusPct = 0.0f;
+    float DiamondResetChancePct = 0.0f;
+};
+
+struct ArcaneExplosionMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    float BronzeManaRefundPct = 0.0f;
+    float SilverRadiusMultiplier = 1.0f;
+    float GoldClearcastingChancePct = 0.0f;
+    float DiamondAftershockPct = 0.0f;
+};
+
 struct FlamestrikeBurnKey
 {
     uint32 CasterGuid;
@@ -112,7 +187,20 @@ struct IgniteCarryState
     uint32 ExpiresAtMs = 0;
 };
 
+struct TimedPctState
+{
+    float BonusPct = 0.0f;
+    uint32 ExpiresAtMs = 0;
+};
+
+struct ArcaneChargeState
+{
+    uint8 Charges = 0;
+    uint32 ExpiresAtMs = 0;
+};
+
 float constexpr FIREBALL_SPLASH_RADIUS = 8.0f;
+float constexpr MAGE_SPLASH_RADIUS = 8.0f;
 int32 constexpr FIREBALL_GOLD_BURN_BASE_DURATION_MS = 6000;
 int32 constexpr FIREBALL_GOLD_BURN_DURATION_EXTEND_MS = 2000;
 int32 constexpr FIREBALL_GOLD_BURN_DURATION_CAP_MS = 18000;
@@ -127,10 +215,167 @@ uint32 constexpr SPELL_MAGE_IGNITE_TALENT_RANK_1 = 11119;
 int32 constexpr PYROBLAST_IGNITE_BASE_DURATION_MS = 6000;
 int32 constexpr PYROBLAST_IGNITE_DURATION_EXTEND_MS = 1000;
 int32 constexpr PYROBLAST_IGNITE_DURATION_CAP_MS = 20000;
+uint32 constexpr FROSTBOLT_ICE_LANCE_MARK_TTL_MS = 6000;
+uint32 constexpr CONE_OF_COLD_VULN_TTL_MS = 4000;
+uint32 constexpr ARCANE_CHARGE_TTL_MS = 8000;
+uint32 constexpr BLIZZARD_XP_GUARD_MS = 900;
+uint32 constexpr CONE_OF_COLD_XP_GUARD_MS = 700;
+uint32 constexpr ARCANE_EXPLOSION_XP_GUARD_MS = 700;
+uint32 constexpr ARCANE_MISSILES_XP_GUARD_MS = 500;
+uint32 constexpr ARCANE_BLAST_CHARGES_MAX = 4;
+uint32 constexpr SPELL_MAGE_CLEARCASTING_BUFF = 12536;
 
 std::unordered_map<FlamestrikeBurnKey, FlamestrikeBurnState, FlamestrikeBurnKeyHash> FlamestrikeBurnStates;
 std::unordered_map<IgniteCarryKey, IgniteCarryState, IgniteCarryKeyHash> IgniteCarryStates;
+std::unordered_map<FlamestrikeBurnKey, TimedPctState, FlamestrikeBurnKeyHash> FrostboltIceLanceMarks;
+std::unordered_map<FlamestrikeBurnKey, TimedPctState, FlamestrikeBurnKeyHash> ConeOfColdVulnerabilities;
+std::unordered_map<uint32, ArcaneChargeState> ArcaneChargeStates;
+std::unordered_map<uint32, uint8> ArcaneExplosionCastCounters;
 std::mutex SpellMasteryMageStateMutex;
+
+bool IsTargetChilledOrFrozen(Unit* target)
+{
+    if (!target)
+        return false;
+
+    return target->HasAuraState(AURA_STATE_FROZEN) || target->HasDecreaseSpeedAura();
+}
+
+int32 ApplyBonusDamagePct(int32 hitDamage, float bonusPct)
+{
+    if (hitDamage <= 0 || bonusPct <= 0.0f)
+        return hitDamage;
+
+    int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (bonusPct / 100.0f))));
+    return std::max(hitDamage, scaledDamage);
+}
+
+void DealExtraSpellDamage(Player* caster, Unit* target, SpellInfo const* spellInfo, int32 damage)
+{
+    if (!caster || !target || !spellInfo || damage <= 0 || !caster->IsValidAttackTarget(target))
+        return;
+
+    SpellNonMeleeDamage extraInfo(caster, target, spellInfo, spellInfo->SchoolMask);
+    extraInfo.damage = damage;
+    caster->SendSpellNonMeleeDamageLog(&extraInfo);
+    caster->DealSpellDamage(&extraInfo, false);
+}
+
+void SetTimedBonusState(std::unordered_map<FlamestrikeBurnKey, TimedPctState, FlamestrikeBurnKeyHash>& states, uint32 casterGuid, uint32 targetGuid, float bonusPct, uint32 ttlMs)
+{
+    if (!ttlMs)
+        return;
+
+    uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+    states[{ casterGuid, targetGuid }] = TimedPctState{ bonusPct, nowMs + ttlMs };
+}
+
+float ConsumeTimedBonusState(std::unordered_map<FlamestrikeBurnKey, TimedPctState, FlamestrikeBurnKeyHash>& states, uint32 casterGuid, uint32 targetGuid)
+{
+    uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+    auto itr = states.find({ casterGuid, targetGuid });
+    if (itr == states.end())
+        return 0.0f;
+
+    if (itr->second.ExpiresAtMs <= nowMs)
+    {
+        states.erase(itr);
+        return 0.0f;
+    }
+
+    float const bonusPct = itr->second.BonusPct;
+    states.erase(itr);
+    return bonusPct;
+}
+
+float GetTimedBonusState(std::unordered_map<FlamestrikeBurnKey, TimedPctState, FlamestrikeBurnKeyHash>& states, uint32 casterGuid, uint32 targetGuid)
+{
+    uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+    auto itr = states.find({ casterGuid, targetGuid });
+    if (itr == states.end())
+        return 0.0f;
+
+    if (itr->second.ExpiresAtMs <= nowMs)
+    {
+        states.erase(itr);
+        return 0.0f;
+    }
+
+    return itr->second.BonusPct;
+}
+
+uint8 GetArcaneCharges(uint32 casterGuid)
+{
+    uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+    auto itr = ArcaneChargeStates.find(casterGuid);
+    if (itr == ArcaneChargeStates.end())
+        return 0;
+
+    if (itr->second.ExpiresAtMs <= nowMs)
+    {
+        ArcaneChargeStates.erase(itr);
+        return 0;
+    }
+
+    return itr->second.Charges;
+}
+
+void IncrementArcaneCharges(uint32 casterGuid)
+{
+    uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+    ArcaneChargeState& state = ArcaneChargeStates[casterGuid];
+    if (state.ExpiresAtMs <= nowMs)
+        state.Charges = 0;
+
+    state.Charges = std::min<uint8>(uint8(ARCANE_BLAST_CHARGES_MAX), uint8(state.Charges + 1));
+    state.ExpiresAtMs = nowMs + ARCANE_CHARGE_TTL_MS;
+}
+
+uint8 ConsumeArcaneCharges(uint32 casterGuid)
+{
+    uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+    auto itr = ArcaneChargeStates.find(casterGuid);
+    if (itr == ArcaneChargeStates.end())
+        return 0;
+
+    if (itr->second.ExpiresAtMs <= nowMs)
+    {
+        ArcaneChargeStates.erase(itr);
+        return 0;
+    }
+
+    uint8 const charges = itr->second.Charges;
+    ArcaneChargeStates.erase(itr);
+    return charges;
+}
+
+void RestoreArcaneCharges(uint32 casterGuid, uint8 charges)
+{
+    if (!charges)
+        return;
+
+    uint32 const nowMs = uint32(GameTime::GetGameTimeMS().count());
+    std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+    ArcaneChargeStates[casterGuid] = ArcaneChargeState
+    {
+        std::min<uint8>(uint8(ARCANE_BLAST_CHARGES_MAX), charges),
+        nowMs + ARCANE_CHARGE_TTL_MS
+    };
+}
+
+uint8 IncrementArcaneExplosionCounter(uint32 casterGuid)
+{
+    std::lock_guard<std::mutex> lock(SpellMasteryMageStateMutex);
+    uint8& counter = ArcaneExplosionCastCounters[casterGuid];
+    counter = uint8((counter % 4) + 1);
+    return counter;
+}
 
 void ApplyStackingIgniteDot(Player* caster, Unit* target, int32 addPerTick, int32 baseDurationMs, int32 extendDurationMs, int32 capDurationMs,
     char const* debugTag = nullptr, int32 sourceDamage = 0, float sourcePct = 0.0f)
@@ -307,6 +552,225 @@ FlamestrikeMasteryEffects BuildFlamestrikeMasteryEffects(SpellMastery::SpellMast
 
     return effects;
 }
+
+FrostboltMasteryEffects BuildFrostboltMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    FrostboltMasteryEffects effects;
+
+    uint8 ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    effects.IronDamageBonusPct = float(ironLevel) * 8.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeCritVsChilledPct = float(bronzeLevel) * 2.0f;
+
+    if (silverLevel > 0)
+        effects.SilverIceLanceMarkPct = 20.0f + (float(silverLevel - 1) * (40.0f / 9.0f));
+
+    if (goldLevel > 0)
+        effects.GoldBonusHitPct = 10.0f + (float(goldLevel - 1) * (20.0f / 9.0f));
+
+    if (diamondLevel > 0)
+    {
+        effects.HasDiamondCastTime = true;
+        effects.DiamondCastTimeMultiplier = 0.90f - (float(diamondLevel - 1) * (0.50f / 9.0f));
+    }
+
+    return effects;
+}
+
+IceLanceMasteryEffects BuildIceLanceMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    IceLanceMasteryEffects effects;
+
+    uint8 ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    effects.IronDamageBonusPct = float(ironLevel) * 8.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeVsChilledBonusPct = float(bronzeLevel) * 5.0f;
+
+    if (silverLevel > 0)
+        effects.SilverCritVsChilledPct = float(silverLevel) * 2.0f;
+
+    if (goldLevel > 0)
+        effects.GoldRicochetPct = 20.0f + (float(goldLevel - 1) * (30.0f / 9.0f));
+
+    if (diamondLevel > 0)
+        effects.DiamondSecondLancePct = 20.0f + (float(diamondLevel - 1) * (30.0f / 9.0f));
+
+    return effects;
+}
+
+BlizzardMasteryEffects BuildBlizzardMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    BlizzardMasteryEffects effects;
+
+    uint8 ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    effects.IronDamageBonusPct = float(ironLevel) * 6.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeRadiusMultiplier += float(bronzeLevel) * 0.10f;
+
+    if (silverLevel > 0)
+        effects.SilverBonusDamagePct = float(silverLevel) * 2.0f;
+
+    if (goldLevel > 0)
+        effects.GoldHailChancePct = 5.0f + (float(goldLevel - 1) * (25.0f / 9.0f));
+
+    if (diamondLevel > 0)
+        effects.DiamondBonusDamagePct = 20.0f + (float(diamondLevel - 1) * (40.0f / 9.0f));
+
+    return effects;
+}
+
+ConeOfColdMasteryEffects BuildConeOfColdMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    ConeOfColdMasteryEffects effects;
+
+    uint8 ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    effects.IronDamageBonusPct = float(ironLevel) * 8.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeRadiusMultiplier += float(bronzeLevel) * 0.05f;
+
+    if (silverLevel > 0)
+        effects.SilverVulnerabilityPct = float(silverLevel) * 2.0f;
+
+    if (goldLevel > 0)
+        effects.GoldBonusDamagePct = 10.0f + (float(goldLevel - 1) * (20.0f / 9.0f));
+
+    if (diamondLevel > 0)
+        effects.DiamondSecondPulsePct = 20.0f + (float(diamondLevel - 1) * (30.0f / 9.0f));
+
+    return effects;
+}
+
+ArcaneBlastMasteryEffects BuildArcaneBlastMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    ArcaneBlastMasteryEffects effects;
+
+    uint8 ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    effects.IronDamageBonusPct = float(ironLevel) * 8.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeManaRefundPct = 4.0f + (float(bronzeLevel - 1) * (10.0f / 9.0f));
+
+    if (silverLevel > 0)
+        effects.SilverPerChargeBonusPct = 4.0f + (float(silverLevel - 1) * (8.0f / 9.0f));
+
+    if (goldLevel > 0)
+        effects.GoldAtFourChargesBonusPct = 10.0f + (float(goldLevel - 1) * (20.0f / 9.0f));
+
+    if (diamondLevel > 0)
+        effects.DiamondAtFourChargesSplashPct = 20.0f + (float(diamondLevel - 1) * (30.0f / 9.0f));
+
+    return effects;
+}
+
+ArcaneMissilesMasteryEffects BuildArcaneMissilesMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    ArcaneMissilesMasteryEffects effects;
+
+    uint8 ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    effects.IronDamageBonusPct = float(ironLevel) * 6.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeTickReductionMs = 100 + (int32(bronzeLevel - 1) * 45);
+
+    if (silverLevel > 0)
+        effects.SilverManaReturnPct = 4.0f + (float(silverLevel - 1) * (10.0f / 9.0f));
+
+    if (goldLevel > 0)
+        effects.GoldExtraMissileChancePct = 5.0f + (float(goldLevel - 1) * (25.0f / 9.0f));
+
+    if (diamondLevel > 0)
+        effects.DiamondCleavePct = 20.0f + (float(diamondLevel - 1) * (30.0f / 9.0f));
+
+    return effects;
+}
+
+ArcaneBarrageMasteryEffects BuildArcaneBarrageMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    ArcaneBarrageMasteryEffects effects;
+
+    uint8 ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    effects.IronDamageBonusPct = float(ironLevel) * 8.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeExtraTargets = uint8(std::min<int32>(3, 1 + int32((bronzeLevel - 1) / 3)));
+
+    if (silverLevel > 0)
+        effects.SilverPerChargeBonusPct = 4.0f + (float(silverLevel - 1) * (8.0f / 9.0f));
+
+    if (goldLevel > 0)
+        effects.GoldFlatBonusPct = 10.0f + (float(goldLevel - 1) * (20.0f / 9.0f));
+
+    if (diamondLevel > 0)
+        effects.DiamondResetChancePct = 5.0f + (float(diamondLevel - 1) * (25.0f / 9.0f));
+
+    return effects;
+}
+
+ArcaneExplosionMasteryEffects BuildArcaneExplosionMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    ArcaneExplosionMasteryEffects effects;
+
+    uint8 ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+
+    effects.IronDamageBonusPct = float(ironLevel) * 6.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeManaRefundPct = 3.0f + (float(bronzeLevel - 1) * (9.0f / 9.0f));
+
+    if (silverLevel > 0)
+        effects.SilverRadiusMultiplier += float(silverLevel) * 0.10f;
+
+    if (goldLevel > 0)
+        effects.GoldClearcastingChancePct = 5.0f + (float(goldLevel - 1) * (20.0f / 9.0f));
+
+    if (diamondLevel > 0)
+        effects.DiamondAftershockPct = 20.0f + (float(diamondLevel - 1) * (30.0f / 9.0f));
+
+    return effects;
+}
 }
 
 void ClearSpellMasteryMageRuntimeStateForPlayer(uint32 guid)
@@ -328,6 +792,25 @@ void ClearSpellMasteryMageRuntimeStateForPlayer(uint32 guid)
         else
             ++itr;
     }
+
+    for (auto itr = FrostboltIceLanceMarks.begin(); itr != FrostboltIceLanceMarks.end();)
+    {
+        if (itr->first.CasterGuid == guid)
+            itr = FrostboltIceLanceMarks.erase(itr);
+        else
+            ++itr;
+    }
+
+    for (auto itr = ConeOfColdVulnerabilities.begin(); itr != ConeOfColdVulnerabilities.end();)
+    {
+        if (itr->first.CasterGuid == guid)
+            itr = ConeOfColdVulnerabilities.erase(itr);
+        else
+            ++itr;
+    }
+
+    ArcaneChargeStates.erase(guid);
+    ArcaneExplosionCastCounters.erase(guid);
 }
 
 class spell_mage_fireball_mastery : public SpellScript
@@ -872,6 +1355,823 @@ class spell_mage_ignite_mastery_pool : public AuraScript
     }
 };
 
+class spell_mage_frostbolt_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_mage_frostbolt_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_MAGE_FROSTBOLT_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildFrostboltMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+        return true;
+    }
+
+    void HandleBeforeHit(SpellMissInfo /*missInfo*/)
+    {
+        if (_effects.BronzeCritVsChilledPct <= 0.0f)
+            return;
+
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target) || !IsTargetChilledOrFrozen(target))
+            return;
+
+        if (roll_chance_f(_effects.BronzeCritVsChilledPct))
+            GetSpell()->SetSpellValue(SPELLVALUE_FORCED_CRIT_RESULT, 1);
+    }
+
+    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+        hitDamage = ApplyBonusDamagePct(hitDamage, _effects.IronDamageBonusPct);
+
+        if (IsTargetChilledOrFrozen(target))
+            hitDamage = ApplyBonusDamagePct(hitDamage, _effects.GoldBonusHitPct);
+
+        uint32 const casterGuid = uint32(_playerCaster->GetGUID().GetCounter());
+        uint32 const targetGuid = uint32(target->GetGUID().GetCounter());
+        hitDamage = ApplyBonusDamagePct(hitDamage, GetTimedBonusState(ConeOfColdVulnerabilities, casterGuid, targetGuid));
+
+        SetHitDamage(hitDamage);
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_isTriggeredCast)
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+
+        if (_effects.SilverIceLanceMarkPct <= 0.0f || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        SetTimedBonusState(
+            FrostboltIceLanceMarks,
+            uint32(_playerCaster->GetGUID().GetCounter()),
+            uint32(target->GetGUID().GetCounter()),
+            _effects.SilverIceLanceMarkPct,
+            FROSTBOLT_ICE_LANCE_MARK_TTL_MS);
+    }
+
+    void Register() override
+    {
+        BeforeHit += BeforeSpellHitFn(spell_mage_frostbolt_mastery::HandleBeforeHit);
+        OnEffectHitTarget += SpellEffectFn(spell_mage_frostbolt_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_mage_frostbolt_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    FrostboltMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+};
+
+class spell_mage_ice_lance_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_mage_ice_lance_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_MAGE_ICE_LANCE_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildIceLanceMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+        return true;
+    }
+
+    void HandleBeforeHit(SpellMissInfo /*missInfo*/)
+    {
+        if (_effects.SilverCritVsChilledPct <= 0.0f)
+            return;
+
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target) || !IsTargetChilledOrFrozen(target))
+            return;
+
+        if (roll_chance_f(_effects.SilverCritVsChilledPct))
+            GetSpell()->SetSpellValue(SPELLVALUE_FORCED_CRIT_RESULT, 1);
+    }
+
+    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+        hitDamage = ApplyBonusDamagePct(hitDamage, _effects.IronDamageBonusPct);
+
+        if (IsTargetChilledOrFrozen(target))
+            hitDamage = ApplyBonusDamagePct(hitDamage, _effects.BronzeVsChilledBonusPct);
+
+        uint32 const casterGuid = uint32(_playerCaster->GetGUID().GetCounter());
+        uint32 const targetGuid = uint32(target->GetGUID().GetCounter());
+        hitDamage = ApplyBonusDamagePct(hitDamage, GetTimedBonusState(ConeOfColdVulnerabilities, casterGuid, targetGuid));
+        hitDamage = ApplyBonusDamagePct(hitDamage, ConsumeTimedBonusState(FrostboltIceLanceMarks, casterGuid, targetGuid));
+
+        SetHitDamage(hitDamage);
+        _finalHitDamage = hitDamage;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_isTriggeredCast)
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+
+        if (!_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        if (_effects.GoldRicochetPct > 0.0f && _finalHitDamage > 0)
+        {
+            int32 const ricochetDamage = std::max<int32>(1, int32(std::lround(float(_finalHitDamage) * (_effects.GoldRicochetPct / 100.0f))));
+            std::list<Unit*> nearbyUnits;
+            Acore::AnyUnfriendlyUnitInObjectRangeCheck check(target, _playerCaster, MAGE_SPLASH_RADIUS);
+            Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(target, nearbyUnits, check);
+            Cell::VisitObjects(target, searcher, MAGE_SPLASH_RADIUS);
+
+            for (Unit* candidate : nearbyUnits)
+            {
+                if (!candidate || candidate == target || !_playerCaster->IsValidAttackTarget(candidate) || !candidate->IsAlive())
+                    continue;
+
+                DealExtraSpellDamage(_playerCaster, candidate, GetSpellInfo(), ricochetDamage);
+                break;
+            }
+        }
+
+        if (_effects.DiamondSecondLancePct > 0.0f && !_isTriggeredCast && _finalHitDamage > 0)
+        {
+            int32 const secondLanceDamage = std::max<int32>(1, int32(std::lround(float(_finalHitDamage) * (_effects.DiamondSecondLancePct / 100.0f))));
+            DealExtraSpellDamage(_playerCaster, target, GetSpellInfo(), secondLanceDamage);
+        }
+    }
+
+    void Register() override
+    {
+        BeforeHit += BeforeSpellHitFn(spell_mage_ice_lance_mastery::HandleBeforeHit);
+        OnEffectHitTarget += SpellEffectFn(spell_mage_ice_lance_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_mage_ice_lance_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    IceLanceMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    int32 _finalHitDamage = 0;
+};
+
+class spell_mage_blizzard_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_mage_blizzard_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_MAGE_BLIZZARD_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildBlizzardMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+
+        if (_effects.BronzeRadiusMultiplier > 1.0f)
+            GetSpell()->SetSpellValue(SPELLVALUE_RADIUS_MOD, int32(std::lround(_effects.BronzeRadiusMultiplier * 10000.0f)));
+
+        return true;
+    }
+
+    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+        hitDamage = ApplyBonusDamagePct(hitDamage, _effects.IronDamageBonusPct);
+
+        bool const chilled = IsTargetChilledOrFrozen(target);
+        if (chilled)
+            hitDamage = ApplyBonusDamagePct(hitDamage, _effects.SilverBonusDamagePct);
+
+        uint32 const casterGuid = uint32(_playerCaster->GetGUID().GetCounter());
+        uint32 const targetGuid = uint32(target->GetGUID().GetCounter());
+        hitDamage = ApplyBonusDamagePct(hitDamage, GetTimedBonusState(ConeOfColdVulnerabilities, casterGuid, targetGuid));
+
+        if (chilled)
+            hitDamage = ApplyBonusDamagePct(hitDamage, _effects.DiamondBonusDamagePct);
+
+        SetHitDamage(hitDamage);
+        _finalHitDamage = hitDamage;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, BLIZZARD_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        if (_effects.GoldHailChancePct <= 0.0f || _finalHitDamage <= 0 || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        if (!roll_chance_f(_effects.GoldHailChancePct))
+            return;
+
+        int32 const hailDamage = std::max<int32>(1, int32(std::lround(float(_finalHitDamage) * (_effects.GoldHailDamagePct / 100.0f))));
+        DealExtraSpellDamage(_playerCaster, target, GetSpellInfo(), hailDamage);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_mage_blizzard_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_mage_blizzard_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    BlizzardMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _xpAwarded = false;
+    int32 _finalHitDamage = 0;
+};
+
+class spell_mage_cone_of_cold_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_mage_cone_of_cold_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_MAGE_CONE_OF_COLD_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildConeOfColdMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+
+        if (_effects.BronzeRadiusMultiplier > 1.0f)
+            GetSpell()->SetSpellValue(SPELLVALUE_RADIUS_MOD, int32(std::lround(_effects.BronzeRadiusMultiplier * 10000.0f)));
+
+        return true;
+    }
+
+    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+        hitDamage = ApplyBonusDamagePct(hitDamage, _effects.IronDamageBonusPct);
+        if (IsTargetChilledOrFrozen(target))
+            hitDamage = ApplyBonusDamagePct(hitDamage, _effects.GoldBonusDamagePct);
+
+        SetHitDamage(hitDamage);
+        _finalHitDamage = hitDamage;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, CONE_OF_COLD_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        if (!_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        if (_effects.SilverVulnerabilityPct > 0.0f)
+        {
+            SetTimedBonusState(
+                ConeOfColdVulnerabilities,
+                uint32(_playerCaster->GetGUID().GetCounter()),
+                uint32(target->GetGUID().GetCounter()),
+                _effects.SilverVulnerabilityPct,
+                CONE_OF_COLD_VULN_TTL_MS);
+        }
+
+        if (_effects.DiamondSecondPulsePct > 0.0f && !_isTriggeredCast && _finalHitDamage > 0)
+        {
+            int32 const pulseDamage = std::max<int32>(1, int32(std::lround(float(_finalHitDamage) * (_effects.DiamondSecondPulsePct / 100.0f))));
+            DealExtraSpellDamage(_playerCaster, target, GetSpellInfo(), pulseDamage);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_mage_cone_of_cold_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_mage_cone_of_cold_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    ConeOfColdMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _xpAwarded = false;
+    int32 _finalHitDamage = 0;
+};
+
+class spell_mage_arcane_blast_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_mage_arcane_blast_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_MAGE_ARCANE_BLAST_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildArcaneBlastMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+        return true;
+    }
+
+    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+        hitDamage = ApplyBonusDamagePct(hitDamage, _effects.IronDamageBonusPct);
+
+        _chargesAtHit = GetArcaneCharges(uint32(_playerCaster->GetGUID().GetCounter()));
+        if (_chargesAtHit > 0)
+            hitDamage = ApplyBonusDamagePct(hitDamage, float(_chargesAtHit) * _effects.SilverPerChargeBonusPct);
+
+        if (_chargesAtHit >= ARCANE_BLAST_CHARGES_MAX)
+            hitDamage = ApplyBonusDamagePct(hitDamage, _effects.GoldAtFourChargesBonusPct);
+
+        SetHitDamage(hitDamage);
+        _finalHitDamage = hitDamage;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_isTriggeredCast)
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+
+        if (!_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        if (!_manaRefundApplied && _effects.BronzeManaRefundPct > 0.0f && _playerCaster->HasActivePowerType(POWER_MANA))
+        {
+            int32 const castCost = std::max<int32>(0, GetSpell()->GetPowerCost());
+            if (castCost > 0)
+            {
+                int32 const refund = std::max<int32>(1, int32(std::lround(float(castCost) * (_effects.BronzeManaRefundPct / 100.0f))));
+                _playerCaster->ModifyPower(POWER_MANA, refund);
+                _manaRefundApplied = true;
+            }
+        }
+
+        if (!_isTriggeredCast)
+            IncrementArcaneCharges(uint32(_playerCaster->GetGUID().GetCounter()));
+
+        if (_effects.DiamondAtFourChargesSplashPct <= 0.0f || _finalHitDamage <= 0 || _chargesAtHit < ARCANE_BLAST_CHARGES_MAX || _isTriggeredCast)
+            return;
+
+        int32 const splashDamage = std::max<int32>(1, int32(std::lround(float(_finalHitDamage) * (_effects.DiamondAtFourChargesSplashPct / 100.0f))));
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(target, _playerCaster, MAGE_SPLASH_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(target, nearbyUnits, check);
+        Cell::VisitObjects(target, searcher, MAGE_SPLASH_RADIUS);
+
+        for (Unit* candidate : nearbyUnits)
+        {
+            if (!candidate || candidate == target || !_playerCaster->IsValidAttackTarget(candidate) || !candidate->IsAlive())
+                continue;
+
+            DealExtraSpellDamage(_playerCaster, candidate, GetSpellInfo(), splashDamage);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_mage_arcane_blast_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_mage_arcane_blast_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    ArcaneBlastMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _manaRefundApplied = false;
+    uint8 _chargesAtHit = 0;
+    int32 _finalHitDamage = 0;
+};
+
+class spell_mage_arcane_missiles_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_mage_arcane_missiles_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_MAGE_ARCANE_MISSILES_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildArcaneMissilesMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+        return true;
+    }
+
+    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+        hitDamage = ApplyBonusDamagePct(hitDamage, _effects.IronDamageBonusPct);
+
+        SetHitDamage(hitDamage);
+        _finalHitDamage = hitDamage;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, ARCANE_MISSILES_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        if (!_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        if (!_manaReturnApplied && _effects.SilverManaReturnPct > 0.0f && _playerCaster->HasActivePowerType(POWER_MANA))
+        {
+            int32 const castCost = std::max<int32>(0, GetSpell()->GetPowerCost());
+            if (castCost > 0)
+            {
+                int32 const refund = std::max<int32>(1, int32(std::lround(float(castCost) * (_effects.SilverManaReturnPct / 100.0f))));
+                _playerCaster->ModifyPower(POWER_MANA, refund);
+                _manaReturnApplied = true;
+            }
+        }
+
+        if (_finalHitDamage <= 0)
+            return;
+
+        if (_effects.GoldExtraMissileChancePct > 0.0f && roll_chance_f(_effects.GoldExtraMissileChancePct))
+        {
+            int32 const bonusMissileDamage = std::max<int32>(1, int32(std::lround(float(_finalHitDamage) * (_effects.GoldExtraMissileDamagePct / 100.0f))));
+            DealExtraSpellDamage(_playerCaster, target, GetSpellInfo(), bonusMissileDamage);
+        }
+
+        if (_effects.DiamondCleavePct <= 0.0f)
+            return;
+
+        int32 const cleaveDamage = std::max<int32>(1, int32(std::lround(float(_finalHitDamage) * (_effects.DiamondCleavePct / 100.0f))));
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(target, _playerCaster, MAGE_SPLASH_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(target, nearbyUnits, check);
+        Cell::VisitObjects(target, searcher, MAGE_SPLASH_RADIUS);
+
+        for (Unit* candidate : nearbyUnits)
+        {
+            if (!candidate || candidate == target || !_playerCaster->IsValidAttackTarget(candidate) || !candidate->IsAlive())
+                continue;
+
+            DealExtraSpellDamage(_playerCaster, candidate, GetSpellInfo(), cleaveDamage);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_mage_arcane_missiles_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_mage_arcane_missiles_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    ArcaneMissilesMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _xpAwarded = false;
+    bool _manaReturnApplied = false;
+    int32 _finalHitDamage = 0;
+};
+
+class spell_mage_arcane_barrage_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_mage_arcane_barrage_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_MAGE_ARCANE_BARRAGE_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildArcaneBarrageMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+        return true;
+    }
+
+    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+        hitDamage = ApplyBonusDamagePct(hitDamage, _effects.IronDamageBonusPct);
+        hitDamage = ApplyBonusDamagePct(hitDamage, _effects.GoldFlatBonusPct);
+
+        uint8 const charges = GetArcaneCharges(uint32(_playerCaster->GetGUID().GetCounter()));
+        _chargesSeen = std::max<uint8>(_chargesSeen, charges);
+        if (charges > 0)
+            hitDamage = ApplyBonusDamagePct(hitDamage, float(charges) * _effects.SilverPerChargeBonusPct);
+
+        SetHitDamage(hitDamage);
+        _finalHitDamage = hitDamage;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, ARCANE_MISSILES_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        if (!_chargesConsumed)
+        {
+            _consumedCharges = ConsumeArcaneCharges(uint32(_playerCaster->GetGUID().GetCounter()));
+            _chargesConsumed = true;
+
+            if (_consumedCharges > 0 && _effects.DiamondResetChancePct > 0.0f && roll_chance_f(_effects.DiamondResetChancePct))
+                RestoreArcaneCharges(uint32(_playerCaster->GetGUID().GetCounter()), _consumedCharges);
+        }
+
+        if (_extraTargetsLaunched || _isTriggeredCast || _effects.BronzeExtraTargets == 0 || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(target, _playerCaster, MAGE_SPLASH_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(target, nearbyUnits, check);
+        Cell::VisitObjects(target, searcher, MAGE_SPLASH_RADIUS);
+
+        uint8 launched = 0;
+        for (Unit* candidate : nearbyUnits)
+        {
+            if (!candidate || candidate == target || !_playerCaster->IsValidAttackTarget(candidate) || !candidate->IsAlive())
+                continue;
+
+            _playerCaster->CastSpell(
+                candidate,
+                _config->AllowedSpellId,
+                TriggerCastFlags(TRIGGERED_IGNORE_GCD | TRIGGERED_IGNORE_CAST_IN_PROGRESS | TRIGGERED_IGNORE_POWER_AND_REAGENT_COST | TRIGGERED_IGNORE_SPELL_AND_CATEGORY_CD | TRIGGERED_CAST_DIRECTLY));
+
+            if (++launched >= _effects.BronzeExtraTargets)
+                break;
+        }
+
+        _extraTargetsLaunched = true;
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_mage_arcane_barrage_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_mage_arcane_barrage_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    ArcaneBarrageMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _xpAwarded = false;
+    bool _chargesConsumed = false;
+    bool _extraTargetsLaunched = false;
+    uint8 _chargesSeen = 0;
+    uint8 _consumedCharges = 0;
+    int32 _finalHitDamage = 0;
+};
+
+class spell_mage_arcane_explosion_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_mage_arcane_explosion_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_MAGE_ARCANE_EXPLOSION_RANK_1)
+            return false;
+
+        _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildArcaneExplosionMasteryEffects(_progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+
+        if (_effects.SilverRadiusMultiplier > 1.0f)
+            GetSpell()->SetSpellValue(SPELLVALUE_RADIUS_MOD, int32(std::lround(_effects.SilverRadiusMultiplier * 10000.0f)));
+
+        return true;
+    }
+
+    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+        hitDamage = ApplyBonusDamagePct(hitDamage, _effects.IronDamageBonusPct);
+
+        SetHitDamage(hitDamage);
+        _finalHitDamage = hitDamage;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsHostileTo(target))
+            return;
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, ARCANE_EXPLOSION_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        if (!_manaRefundApplied && _effects.BronzeManaRefundPct > 0.0f && _playerCaster->HasActivePowerType(POWER_MANA))
+        {
+            int32 const castCost = std::max<int32>(0, GetSpell()->GetPowerCost());
+            if (castCost > 0)
+            {
+                int32 const refund = std::max<int32>(1, int32(std::lround(float(castCost) * (_effects.BronzeManaRefundPct / 100.0f))));
+                _playerCaster->ModifyPower(POWER_MANA, refund);
+                _manaRefundApplied = true;
+            }
+        }
+
+        if (!_clearcastingRolled && _effects.GoldClearcastingChancePct > 0.0f && roll_chance_f(_effects.GoldClearcastingChancePct))
+        {
+            _playerCaster->CastSpell(_playerCaster, SPELL_MAGE_CLEARCASTING_BUFF, TRIGGERED_FULL_MASK);
+            _clearcastingRolled = true;
+        }
+
+        if (_aftershockChecked || _isTriggeredCast || _effects.DiamondAftershockPct <= 0.0f || _finalHitDamage <= 0)
+            return;
+
+        _aftershockChecked = true;
+        uint8 const counter = IncrementArcaneExplosionCounter(uint32(_playerCaster->GetGUID().GetCounter()));
+        if (counter != 4)
+            return;
+
+        int32 const aftershockDamage = std::max<int32>(1, int32(std::lround(float(_finalHitDamage) * (_effects.DiamondAftershockPct / 100.0f))));
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(_playerCaster, _playerCaster, MAGE_SPLASH_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(_playerCaster, nearbyUnits, check);
+        Cell::VisitObjects(_playerCaster, searcher, MAGE_SPLASH_RADIUS);
+
+        for (Unit* candidate : nearbyUnits)
+        {
+            if (!candidate || !_playerCaster->IsValidAttackTarget(candidate) || !candidate->IsAlive())
+                continue;
+
+            DealExtraSpellDamage(_playerCaster, candidate, GetSpellInfo(), aftershockDamage);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_mage_arcane_explosion_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_mage_arcane_explosion_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    SpellMastery::SpellMasteryProgress _progress;
+    ArcaneExplosionMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _xpAwarded = false;
+    bool _manaRefundApplied = false;
+    bool _clearcastingRolled = false;
+    bool _aftershockChecked = false;
+    int32 _finalHitDamage = 0;
+};
+
 class spell_mastery_prepare_mage_spell_script : public AllSpellScript
 {
 public:
@@ -939,6 +2239,62 @@ public:
             int32 const reducedCastTime = std::max<int32>(1, int32(float(currentCastTime) * effects.DiamondCastTimeMultiplier));
             if (reducedCastTime < currentCastTime)
                 spell->SetSpellMasteryCastTime(reducedCastTime);
+            return;
+        }
+
+        if (config->BaseSpellId == SpellMastery::SPELL_MAGE_FROSTBOLT_RANK_1)
+        {
+            FrostboltMasteryEffects const effects = BuildFrostboltMasteryEffects(progress, *config);
+            if (!effects.HasDiamondCastTime)
+                return;
+
+            int32 const currentCastTime = spell->GetCastTime();
+            if (currentCastTime <= 0)
+                return;
+
+            int32 const reducedCastTime = std::max<int32>(1, int32(float(currentCastTime) * effects.DiamondCastTimeMultiplier));
+            if (reducedCastTime < currentCastTime)
+                spell->SetSpellMasteryCastTime(reducedCastTime);
+            return;
+        }
+
+        if (config->BaseSpellId == SpellMastery::SPELL_MAGE_BLIZZARD_RANK_1)
+        {
+            BlizzardMasteryEffects const effects = BuildBlizzardMasteryEffects(progress, *config);
+            if (effects.BronzeRadiusMultiplier > 1.0f)
+                spell->SetSpellValue(SPELLVALUE_RADIUS_MOD, int32(std::lround(effects.BronzeRadiusMultiplier * 10000.0f)));
+            return;
+        }
+
+        if (config->BaseSpellId == SpellMastery::SPELL_MAGE_CONE_OF_COLD_RANK_1)
+        {
+            ConeOfColdMasteryEffects const effects = BuildConeOfColdMasteryEffects(progress, *config);
+            if (effects.BronzeRadiusMultiplier > 1.0f)
+                spell->SetSpellValue(SPELLVALUE_RADIUS_MOD, int32(std::lround(effects.BronzeRadiusMultiplier * 10000.0f)));
+            return;
+        }
+
+        if (config->BaseSpellId == SpellMastery::SPELL_MAGE_ARCANE_MISSILES_RANK_1)
+        {
+            ArcaneMissilesMasteryEffects const effects = BuildArcaneMissilesMasteryEffects(progress, *config);
+            if (effects.BronzeTickReductionMs <= 0)
+                return;
+
+            int32 const currentCastTime = spell->GetCastTime();
+            if (currentCastTime <= 0)
+                return;
+
+            int32 const reducedCastTime = std::max<int32>(1, currentCastTime - effects.BronzeTickReductionMs);
+            if (reducedCastTime < currentCastTime)
+                spell->SetSpellMasteryCastTime(reducedCastTime);
+            return;
+        }
+
+        if (config->BaseSpellId == SpellMastery::SPELL_MAGE_ARCANE_EXPLOSION_RANK_1)
+        {
+            ArcaneExplosionMasteryEffects const effects = BuildArcaneExplosionMasteryEffects(progress, *config);
+            if (effects.SilverRadiusMultiplier > 1.0f)
+                spell->SetSpellValue(SPELLVALUE_RADIUS_MOD, int32(std::lround(effects.SilverRadiusMultiplier * 10000.0f)));
         }
     }
 };
@@ -950,4 +2306,12 @@ void AddSC_spell_mastery_mage()
     RegisterSpellScript(spell_mage_flamestrike_mastery);
     RegisterSpellScript(spell_mage_pyroblast_ignite_pool);
     RegisterSpellScript(spell_mage_ignite_mastery_pool);
+    RegisterSpellScript(spell_mage_frostbolt_mastery);
+    RegisterSpellScript(spell_mage_ice_lance_mastery);
+    RegisterSpellScript(spell_mage_blizzard_mastery);
+    RegisterSpellScript(spell_mage_cone_of_cold_mastery);
+    RegisterSpellScript(spell_mage_arcane_blast_mastery);
+    RegisterSpellScript(spell_mage_arcane_missiles_mastery);
+    RegisterSpellScript(spell_mage_arcane_barrage_mastery);
+    RegisterSpellScript(spell_mage_arcane_explosion_mastery);
 }

@@ -32,6 +32,14 @@ Configured in `src/server/scripts/World/spell_mastery_fireball.cpp`:
 - Fireball baseline rank: Rank 3
 - Pyroblast baseline rank: Rank 10
 - Flamestrike baseline rank: Rank 3
+- Frostbolt baseline rank: Rank 1
+- Ice Lance baseline rank: Rank 1
+- Blizzard baseline rank: Rank 1
+- Cone of Cold baseline rank: Rank 1
+- Arcane Blast baseline rank: Rank 1
+- Arcane Missiles baseline rank: Rank 1
+- Arcane Barrage baseline rank: Rank 1
+- Arcane Explosion baseline rank: Rank 1
 - Chain Lightning baseline rank: Rank 1
 - Lava Burst baseline rank: Rank 1
 - Power Word: Shield baseline rank: Rank 1
@@ -79,6 +87,114 @@ Source: `src/server/scripts/World/spell_mastery_mage.cpp`
   - `8 + (Silver level - 1) * (14 / 9)` (8% to 22%)
 - Gold burn damage percent:
   - `10 + (Gold level - 1) * (15 / 9)` (10% to 25%)
+
+### Frostbolt
+
+- Iron direct damage bonus percent:
+  - `8 * Iron level`
+- Bronze crit chance bonus percent against chilled/frozen targets:
+  - `2 * Bronze level`
+- Silver mark bonus percent consumed by Ice Lance:
+  - `20 + (Silver level - 1) * (40 / 9)` (20% to 60%)
+- Gold bonus damage percent against chilled/frozen targets:
+  - `10 + (Gold level - 1) * (20 / 9)` (10% to 30%)
+- Diamond cast time multiplier:
+  - `0.90 - (Diamond level - 1) * (0.50 / 9)` (90% to 40% of base cast time)
+
+### Ice Lance
+
+- Iron direct damage bonus percent:
+  - `8 * Iron level`
+- Bronze bonus damage percent against chilled/frozen targets:
+  - `5 * Bronze level`
+- Silver crit chance bonus percent against chilled/frozen targets:
+  - `2 * Silver level`
+- Gold ricochet percent:
+  - `20 + (Gold level - 1) * (30 / 9)` (20% to 50%)
+- Diamond second-lance bonus damage percent:
+  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%)
+
+### Blizzard
+
+- Iron direct damage bonus percent:
+  - `6 * Iron level`
+- Bronze radius multiplier:
+  - `1 + 0.10 * Bronze level`
+- Silver bonus damage percent against chilled/frozen targets:
+  - `2 * Silver level`
+- Gold hail proc chance percent:
+  - `5 + (Gold level - 1) * (25 / 9)` (5% to 30%)
+- Gold hail proc damage percent:
+  - `40` of hit damage
+- Diamond bonus damage percent against chilled/frozen targets:
+  - `20 + (Diamond level - 1) * (40 / 9)` (20% to 60%)
+
+### Cone of Cold
+
+- Iron direct damage bonus percent:
+  - `8 * Iron level`
+- Bronze radius multiplier:
+  - `1 + 0.05 * Bronze level`
+- Silver frost vulnerability percent applied to target:
+  - `2 * Silver level`
+- Gold bonus damage percent against chilled/frozen targets:
+  - `10 + (Gold level - 1) * (20 / 9)` (10% to 30%)
+- Diamond second pulse percent:
+  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%)
+
+### Arcane Blast
+
+- Iron direct damage bonus percent:
+  - `8 * Iron level`
+- Bronze mana refund percent:
+  - `4 + (Bronze level - 1) * (10 / 9)` (4% to 14%)
+- Silver bonus damage per arcane charge percent:
+  - `4 + (Silver level - 1) * (8 / 9)` (4% to 12%) per charge
+- Gold bonus damage at 4 charges percent:
+  - `10 + (Gold level - 1) * (20 / 9)` (10% to 30%)
+- Diamond splash percent at 4 charges:
+  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%)
+
+### Arcane Missiles
+
+- Iron direct damage bonus percent:
+  - `6 * Iron level`
+- Bronze cast-time reduction:
+  - `100 + 45 * (Bronze level - 1)` milliseconds
+- Silver mana return percent:
+  - `4 + (Silver level - 1) * (10 / 9)` (4% to 14%)
+- Gold extra missile proc chance percent:
+  - `5 + (Gold level - 1) * (25 / 9)` (5% to 30%)
+- Gold extra missile proc damage percent:
+  - `40` of hit damage
+- Diamond cleave percent:
+  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%)
+
+### Arcane Barrage
+
+- Iron direct damage bonus percent:
+  - `8 * Iron level`
+- Bronze extra targets:
+  - `minimum(3, 1 + floor((Bronze level - 1) / 3))`
+- Silver bonus damage per arcane charge percent:
+  - `4 + (Silver level - 1) * (8 / 9)` (4% to 12%) per charge
+- Gold flat bonus damage percent:
+  - `10 + (Gold level - 1) * (20 / 9)` (10% to 30%)
+- Diamond charge reset chance percent:
+  - `5 + (Diamond level - 1) * (25 / 9)` (5% to 30%)
+
+### Arcane Explosion
+
+- Iron direct damage bonus percent:
+  - `6 * Iron level`
+- Bronze mana refund percent:
+  - `3 + (Bronze level - 1) * (9 / 9)` (3% to 12%)
+- Silver radius multiplier:
+  - `1 + 0.10 * Silver level`
+- Gold clearcasting proc chance percent:
+  - `5 + (Gold level - 1) * (20 / 9)` (5% to 25%)
+- Diamond aftershock percent (every 4th cast):
+  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%)
 
 ## Druid
 
