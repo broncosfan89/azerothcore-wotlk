@@ -54,11 +54,23 @@ struct ShadowBoltMasteryEffects
     uint8 DiamondExtraTargets = 0;
 };
 
+struct ChaosBoltMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    float BronzeManaRefundPct = 0.0f;
+    float SilverCritChancePct = 0.0f;
+    float GoldExecuteBonusPct = 0.0f;
+    uint8 DiamondExtraTargets = 0;
+};
+
 int32 constexpr HAUNT_DIAMOND_DOT_MAX_DURATION_MS = 60000;
 uint32 constexpr HAUNT_XP_GUARD_MS = 250;
 uint32 constexpr SHADOW_BOLT_XP_GUARD_MS = 250;
+uint32 constexpr CHAOS_BOLT_XP_GUARD_MS = 600;
 float constexpr SHADOW_BOLT_SILVER_SPLASH_RADIUS = 8.0f;
 float constexpr SHADOW_BOLT_DIAMOND_SEARCH_RADIUS = 25.0f;
+float constexpr CHAOS_BOLT_DIAMOND_SEARCH_RADIUS = 25.0f;
+float constexpr CHAOS_BOLT_GOLD_EXECUTE_HEALTH_PCT = 35.0f;
 float constexpr SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_PER_LEVEL = 0.30f;
 float constexpr SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_MAX_MULTIPLIER = 25.0f;
 int32 constexpr SHADOW_BOLT_GOLD_DOT_BASE_DURATION_MS = 6000;
@@ -130,6 +142,40 @@ ShadowBoltMasteryEffects BuildShadowBoltMasteryEffects(SpellMastery::SpellMaster
     // Diamond: hit additional nearby targets.
     if (diamondLevel > 0)
         effects.DiamondExtraTargets = diamondLevel;
+
+    return effects;
+}
+
+ChaosBoltMasteryEffects BuildChaosBoltMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    ChaosBoltMasteryEffects effects;
+
+    uint8 const ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 const bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
+
+    // Global output ramp: each mastery level contributes to Chaos Bolt direct damage.
+    if (totalMasteryLevels > 0)
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 6.0f;
+
+    // Bronze: partial mana refund.
+    if (bronzeLevel > 0)
+        effects.BronzeManaRefundPct = 5.0f + (float(bronzeLevel - 1) * (15.0f / 9.0f)); // 5% -> 20%
+
+    // Silver: bonus crit chance.
+    if (silverLevel > 0)
+        effects.SilverCritChancePct = 5.0f + (float(silverLevel - 1) * (25.0f / 9.0f)); // 5% -> 30%
+
+    // Gold: execute damage bonus against low-health targets.
+    if (goldLevel > 0)
+        effects.GoldExecuteBonusPct = 10.0f + (float(goldLevel - 1) * (30.0f / 9.0f)); // 10% -> 40%
+
+    // Diamond: fire extra Chaos Bolts at nearby enemies.
+    if (diamondLevel > 0)
+        effects.DiamondExtraTargets = uint8((diamondLevel + 2) / 3); // 1..4
 
     return effects;
 }
@@ -551,8 +597,141 @@ private:
     int32 _finalHitDamage = 0;
 };
 
+class spell_warl_chaos_bolt_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_warl_chaos_bolt_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_WARLOCK_CHAOS_BOLT_RANK_1)
+            return false;
+
+        SpellMastery::SpellMasteryProgress const& progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildChaosBoltMasteryEffects(progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+        return true;
+    }
+
+    void HandleBeforeHit(SpellMissInfo /*missInfo*/)
+    {
+        if (_effects.SilverCritChancePct <= 0.0f)
+            return;
+
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        if (roll_chance_f(_effects.SilverCritChancePct))
+            GetSpell()->SetSpellValue(SPELLVALUE_FORCED_CRIT_RESULT, 1);
+    }
+
+    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+
+        if (_effects.IronDamageBonusPct > 0.0f)
+        {
+            int32 const scaledDamage = int32(std::lround(float(hitDamage) * (1.0f + (_effects.IronDamageBonusPct / 100.0f))));
+            hitDamage = std::max(hitDamage, scaledDamage);
+        }
+
+        if (_effects.GoldExecuteBonusPct > 0.0f && target->GetHealthPct() <= CHAOS_BOLT_GOLD_EXECUTE_HEALTH_PCT)
+        {
+            int32 const executeScaled = int32(std::lround(float(hitDamage) * (1.0f + (_effects.GoldExecuteBonusPct / 100.0f))));
+            hitDamage = std::max(hitDamage, executeScaled);
+        }
+
+        SetHitDamage(hitDamage);
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, CHAOS_BOLT_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        TryApplyBronzeManaRefund();
+        TryApplyDiamondExtraBolts(target);
+    }
+
+    void TryApplyBronzeManaRefund()
+    {
+        if (_manaRefundApplied || _effects.BronzeManaRefundPct <= 0.0f || !_playerCaster->HasActivePowerType(POWER_MANA))
+            return;
+
+        int32 const castCost = std::max<int32>(0, GetSpell()->GetPowerCost());
+        if (castCost <= 0)
+            return;
+
+        int32 const refund = std::max<int32>(1, int32(std::lround(float(castCost) * (_effects.BronzeManaRefundPct / 100.0f))));
+        _playerCaster->ModifyPower(POWER_MANA, refund);
+        _manaRefundApplied = true;
+    }
+
+    void TryApplyDiamondExtraBolts(Unit* primaryTarget)
+    {
+        if (!primaryTarget || _effects.DiamondExtraTargets == 0 || _isTriggeredCast)
+            return;
+
+        uint8 launched = 0;
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(primaryTarget, _playerCaster, CHAOS_BOLT_DIAMOND_SEARCH_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(primaryTarget, nearbyUnits, check);
+        Cell::VisitObjects(primaryTarget, searcher, CHAOS_BOLT_DIAMOND_SEARCH_RADIUS);
+
+        for (Unit* candidate : nearbyUnits)
+        {
+            if (!candidate || candidate == primaryTarget || !_playerCaster->IsValidAttackTarget(candidate) || !candidate->IsAlive())
+                continue;
+
+            _playerCaster->CastSpell(
+                candidate,
+                _config->AllowedSpellId,
+                TriggerCastFlags(TRIGGERED_IGNORE_GCD | TRIGGERED_IGNORE_CAST_IN_PROGRESS | TRIGGERED_IGNORE_POWER_AND_REAGENT_COST | TRIGGERED_IGNORE_SPELL_AND_CATEGORY_CD | TRIGGERED_CAST_DIRECTLY));
+
+            if (++launched >= _effects.DiamondExtraTargets)
+                break;
+        }
+    }
+
+    void Register() override
+    {
+        BeforeHit += BeforeSpellHitFn(spell_warl_chaos_bolt_mastery::HandleBeforeHit);
+        OnEffectHitTarget += SpellEffectFn(spell_warl_chaos_bolt_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        AfterHit += SpellHitFn(spell_warl_chaos_bolt_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    ChaosBoltMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _xpAwarded = false;
+    bool _manaRefundApplied = false;
+};
+
 void AddSC_spell_mastery_warlock()
 {
     RegisterSpellAndAuraScriptPair(spell_warl_haunt_mastery, spell_warl_haunt_mastery_aura);
     RegisterSpellScript(spell_warl_shadow_bolt_mastery);
+    RegisterSpellScript(spell_warl_chaos_bolt_mastery);
 }
