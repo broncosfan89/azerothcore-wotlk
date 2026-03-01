@@ -3593,6 +3593,9 @@ SpellCastResult Spell::prepare(SpellCastTargets const* targets, AuraEffect const
         m_caster->SetStandState(UNIT_STAND_STATE_STAND);
     }
 
+    // Allow scripts to mutate cast behavior (cast time, spell values, etc.) before execution path is chosen.
+    sScriptMgr->OnSpellPrepare(this, m_caster, m_spellInfo);
+
     //Containers for channeled spells have to be set
     //TODO:Apply this to all casted spells if needed
     // Why check duration? 29350: channelled triggers channelled
@@ -3640,8 +3643,6 @@ SpellCastResult Spell::prepare(SpellCastTargets const* targets, AuraEffect const
         if (!HasTriggeredCastFlag(TRIGGERED_IGNORE_GCD))
             TriggerGlobalCooldown();
     }
-
-    sScriptMgr->OnSpellPrepare(this, m_caster, m_spellInfo);
 
     return SPELL_CAST_OK;
 }

@@ -20,6 +20,8 @@ TARGET_NAME = "Volcanic Eruption"
 TARGET_SUBTEXT = ""
 TARGET_DESCRIPTION = "Erupts volcanic fire at the target location, dealing Fire damage every 1 sec for 10 sec."
 TARGET_AURA_DESCRIPTION = ""
+HUNTER_AIMED_SHOT_RANK_1 = 19434
+CAST_TIME_INDEX_3000MS = 5
 
 FIELD_COUNT = 234
 RECORD_SIZE = 936
@@ -118,6 +120,8 @@ def patch_records(records: List[List[int]], original_strings: bytes) -> Tuple[Li
     by_id: Dict[int, List[int]] = {row[IDX_ID]: row for row in records}
     if SOURCE_SPELL_ID not in by_id:
         raise RuntimeError(f"Source spell {SOURCE_SPELL_ID} not found in Spell.dbc")
+    if HUNTER_AIMED_SHOT_RANK_1 not in by_id:
+        raise RuntimeError(f"Aimed Shot spell {HUNTER_AIMED_SHOT_RANK_1} not found in Spell.dbc")
 
     source_row = by_id[SOURCE_SPELL_ID]
     target_row = source_row.copy()
@@ -167,6 +171,9 @@ def patch_records(records: List[List[int]], original_strings: bytes) -> Tuple[Li
     target_row[IDX_SUBTEXT_MASK] = 0
     target_row[IDX_DESC_MASK] = 0
     target_row[IDX_AURA_DESC_MASK] = 0
+
+    # Ensure Aimed Shot has a client-side cast bar. Server mastery logic can still end early via cancel/release flow.
+    by_id[HUNTER_AIMED_SHOT_RANK_1][IDX_CASTING_TIME_INDEX] = CAST_TIME_INDEX_3000MS
 
     replaced = False
     for i, row in enumerate(records):

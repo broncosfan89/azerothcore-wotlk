@@ -241,6 +241,25 @@ bool IsTargetChilledOrFrozen(Unit* target)
     return target->HasAuraState(AURA_STATE_FROZEN) || target->HasDecreaseSpeedAura();
 }
 
+bool IsBlizzardTriggerSpellId(uint32 spellId)
+{
+    switch (spellId)
+    {
+        case 42208: // Blizzard rank 1 trigger
+        case 42209: // rank 2 trigger
+        case 42210: // rank 3 trigger
+        case 42211: // rank 4 trigger
+        case 42212: // rank 5 trigger
+        case 42213: // rank 6 trigger
+        case 42198: // rank 7 trigger
+        case 42937: // rank 8 trigger
+        case 42938: // rank 9 trigger
+            return true;
+        default:
+            return false;
+    }
+}
+
 int32 ApplyBonusDamagePct(int32 hitDamage, float bonusPct)
 {
     if (hitDamage <= 0 || bonusPct <= 0.0f)
@@ -1388,7 +1407,7 @@ class spell_mage_frostbolt_mastery : public SpellScript
             GetSpell()->SetSpellValue(SPELLVALUE_FORCED_CRIT_RESULT, 1);
     }
 
-    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    void HandleDirectDamage()
     {
         Unit* target = GetHitUnit();
         if (!target || !_playerCaster->IsValidAttackTarget(target))
@@ -1434,7 +1453,7 @@ class spell_mage_frostbolt_mastery : public SpellScript
     void Register() override
     {
         BeforeHit += BeforeSpellHitFn(spell_mage_frostbolt_mastery::HandleBeforeHit);
-        OnEffectHitTarget += SpellEffectFn(spell_mage_frostbolt_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        OnHit += SpellHitFn(spell_mage_frostbolt_mastery::HandleDirectDamage);
         AfterHit += SpellHitFn(spell_mage_frostbolt_mastery::HandleAfterHit);
     }
 
@@ -1567,7 +1586,10 @@ class spell_mage_blizzard_mastery : public SpellScript
             return false;
 
         _playerCaster = GetCaster()->ToPlayer();
-        _config = SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+        _isBlizzardTrigger = IsBlizzardTriggerSpellId(GetSpellInfo()->Id);
+        _config = _isBlizzardTrigger
+            ? SpellMastery::GetManagedSpellConfigByBaseSpell(SpellMastery::SPELL_MAGE_BLIZZARD_RANK_1)
+            : SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
         if (!_config || _config->BaseSpellId != SpellMastery::SPELL_MAGE_BLIZZARD_RANK_1)
             return false;
 
@@ -1575,13 +1597,13 @@ class spell_mage_blizzard_mastery : public SpellScript
         _effects = BuildBlizzardMasteryEffects(_progress, *_config);
         _isTriggeredCast = GetSpell()->IsTriggered();
 
-        if (_effects.BronzeRadiusMultiplier > 1.0f)
+        if (!_isBlizzardTrigger && _effects.BronzeRadiusMultiplier > 1.0f)
             GetSpell()->SetSpellValue(SPELLVALUE_RADIUS_MOD, int32(std::lround(_effects.BronzeRadiusMultiplier * 10000.0f)));
 
         return true;
     }
 
-    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    void HandleDirectDamage()
     {
         Unit* target = GetHitUnit();
         if (!target || !_playerCaster->IsValidAttackTarget(target))
@@ -1615,7 +1637,8 @@ class spell_mage_blizzard_mastery : public SpellScript
         if (!target || !_playerCaster->IsHostileTo(target))
             return;
 
-        if (!_xpAwarded && !_isTriggeredCast && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, BLIZZARD_XP_GUARD_MS))
+        bool const allowTriggeredXp = _isBlizzardTrigger;
+        if (!_xpAwarded && (allowTriggeredXp || !_isTriggeredCast) && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, BLIZZARD_XP_GUARD_MS))
         {
             SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
             _xpAwarded = true;
@@ -1633,7 +1656,7 @@ class spell_mage_blizzard_mastery : public SpellScript
 
     void Register() override
     {
-        OnEffectHitTarget += SpellEffectFn(spell_mage_blizzard_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        OnHit += SpellHitFn(spell_mage_blizzard_mastery::HandleDirectDamage);
         AfterHit += SpellHitFn(spell_mage_blizzard_mastery::HandleAfterHit);
     }
 
@@ -1643,6 +1666,7 @@ private:
     SpellMastery::SpellMasteryProgress _progress;
     BlizzardMasteryEffects _effects;
     bool _isTriggeredCast = false;
+    bool _isBlizzardTrigger = false;
     bool _xpAwarded = false;
     int32 _finalHitDamage = 0;
 };
@@ -1671,7 +1695,7 @@ class spell_mage_cone_of_cold_mastery : public SpellScript
         return true;
     }
 
-    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    void HandleDirectDamage()
     {
         Unit* target = GetHitUnit();
         if (!target || !_playerCaster->IsValidAttackTarget(target))
@@ -1724,7 +1748,7 @@ class spell_mage_cone_of_cold_mastery : public SpellScript
 
     void Register() override
     {
-        OnEffectHitTarget += SpellEffectFn(spell_mage_cone_of_cold_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        OnHit += SpellHitFn(spell_mage_cone_of_cold_mastery::HandleDirectDamage);
         AfterHit += SpellHitFn(spell_mage_cone_of_cold_mastery::HandleAfterHit);
     }
 
@@ -1863,7 +1887,7 @@ class spell_mage_arcane_missiles_mastery : public SpellScript
         return true;
     }
 
-    void HandleDirectDamage(SpellEffIndex /*effIndex*/)
+    void HandleDirectDamage()
     {
         Unit* target = GetHitUnit();
         if (!target || !_playerCaster->IsValidAttackTarget(target))
@@ -1935,7 +1959,7 @@ class spell_mage_arcane_missiles_mastery : public SpellScript
 
     void Register() override
     {
-        OnEffectHitTarget += SpellEffectFn(spell_mage_arcane_missiles_mastery::HandleDirectDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        OnHit += SpellHitFn(spell_mage_arcane_missiles_mastery::HandleDirectDamage);
         AfterHit += SpellHitFn(spell_mage_arcane_missiles_mastery::HandleAfterHit);
     }
 

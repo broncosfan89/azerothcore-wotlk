@@ -36,7 +36,7 @@
 
 namespace SpellMastery
 {
-std::array<ManagedSpellConfig, 28> const ManagedSpellConfigs =
+std::array<ManagedSpellConfig, 29> const ManagedSpellConfigs =
 { {
     { SPELL_MAGE_FIREBALL_RANK_1, SPELL_MAGE_FIREBALL_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MAGE_PYROBLAST_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -59,6 +59,7 @@ std::array<ManagedSpellConfig, 28> const ManagedSpellConfigs =
     { SPELL_ROGUE_FAN_OF_KNIVES_RANK_1, SPELL_ROGUE_FAN_OF_KNIVES_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_ROGUE_RUPTURE_RANK_1, SPELL_ROGUE_RUPTURE_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_HUNTER_VOLLEY_RANK_1, SPELL_HUNTER_VOLLEY_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
+    { SPELL_HUNTER_AIMED_SHOT_RANK_1, SPELL_HUNTER_AIMED_SHOT_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_HUNTER_SERPENT_STING_RANK_1, SPELL_HUNTER_SERPENT_STING_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARLOCK_HAUNT_RANK_1, SPELL_WARLOCK_HAUNT_RANK_3, SPELL_MASTERY_TIER_DIAMOND, 10 },
     { SPELL_WARLOCK_SHADOW_BOLT_RANK_1, SPELL_WARLOCK_SHADOW_BOLT_RANK_1, SPELL_MASTERY_TIER_DIAMOND, 10 },
@@ -439,6 +440,30 @@ void EnsureMageInstantLevelOneSpells(Player* player)
     if (!player || player->getClass() != CLASS_MAGE || player->GetLevel() < 1)
         return;
 
+    if (!player->HasSpell(SPELL_MAGE_FROSTBOLT_RANK_1))
+        player->learnSpell(SPELL_MAGE_FROSTBOLT_RANK_1);
+
+    if (!player->HasSpell(SPELL_MAGE_ICE_LANCE_RANK_1))
+        player->learnSpell(SPELL_MAGE_ICE_LANCE_RANK_1);
+
+    if (!player->HasSpell(SPELL_MAGE_BLIZZARD_RANK_1))
+        player->learnSpell(SPELL_MAGE_BLIZZARD_RANK_1);
+
+    if (!player->HasSpell(SPELL_MAGE_CONE_OF_COLD_RANK_1))
+        player->learnSpell(SPELL_MAGE_CONE_OF_COLD_RANK_1);
+
+    if (!player->HasSpell(SPELL_MAGE_ARCANE_BLAST_RANK_1))
+        player->learnSpell(SPELL_MAGE_ARCANE_BLAST_RANK_1);
+
+    if (!player->HasSpell(SPELL_MAGE_ARCANE_MISSILES_RANK_1))
+        player->learnSpell(SPELL_MAGE_ARCANE_MISSILES_RANK_1);
+
+    if (!player->HasSpell(SPELL_MAGE_ARCANE_BARRAGE_RANK_1))
+        player->learnSpell(SPELL_MAGE_ARCANE_BARRAGE_RANK_1);
+
+    if (!player->HasSpell(SPELL_MAGE_ARCANE_EXPLOSION_RANK_1))
+        player->learnSpell(SPELL_MAGE_ARCANE_EXPLOSION_RANK_1);
+
     if (!player->HasSpell(SPELL_MAGE_PYROBLAST_RANK_1))
         player->learnSpell(SPELL_MAGE_PYROBLAST_RANK_1);
 }
@@ -495,6 +520,9 @@ void EnsureHunterInstantLevelOneSpells(Player* player)
 
     if (!player->HasSpell(SPELL_HUNTER_VOLLEY_RANK_1))
         player->learnSpell(SPELL_HUNTER_VOLLEY_RANK_1);
+
+    if (!player->HasSpell(SPELL_HUNTER_AIMED_SHOT_RANK_1))
+        player->learnSpell(SPELL_HUNTER_AIMED_SHOT_RANK_1);
 
     if (!player->HasSpell(SPELL_HUNTER_SERPENT_STING_RANK_1))
         player->learnSpell(SPELL_HUNTER_SERPENT_STING_RANK_1);

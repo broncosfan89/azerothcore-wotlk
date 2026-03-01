@@ -49,6 +49,7 @@ Configured in `src/server/scripts/World/spell_mastery_fireball.cpp`:
 - Fan of Knives baseline rank: Rank 1
 - Rupture baseline rank: Rank 1
 - Volley baseline rank: Rank 1
+- Aimed Shot baseline rank: Rank 1
 - Serpent Sting baseline rank: Rank 1
 - Haunt baseline rank: Rank 3
 - Shadow Bolt baseline rank: Rank 1
@@ -350,6 +351,23 @@ Source: `src/server/scripts/World/spell_mastery_hunter.cpp`
   - Tick interval `1000 - round(500 * Gold level / 10)` milliseconds, minimum 500 milliseconds
 - Diamond AoE burst damage:
   - `20 + (Diamond level - 1) * (40 / 9)` percent (20% to 60%) to enemies within 6 yards of each target hit
+
+### Aimed Shot
+
+- Charge damage scaling percent (based on charge ratio):
+  - `20 + 180 * charge ratio` (20% to 200%)
+- Total mana cost multiplier (before Bronze reduction):
+  - `0.25 + 1.75 * charge ratio` (25% to 200% of base mana cost)
+- Iron direct damage bonus percent:
+  - `5 * Iron level`
+- Bronze mana cost reduction percent:
+  - `2.5 * Bronze level`
+- Silver crit chance at 50%+ charge:
+  - `2 * Silver level`
+- Gold bonus damage at 70%+ charge:
+  - `10 + (Gold level - 1) * (20 / 9)` (10% to 30%)
+- Diamond splash damage at 90%+ charge:
+  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%) in 8 yards
 
 ### Serpent Sting
 
