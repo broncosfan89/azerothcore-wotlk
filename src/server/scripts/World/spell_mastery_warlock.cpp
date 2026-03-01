@@ -63,13 +63,25 @@ struct ChaosBoltMasteryEffects
     uint8 DiamondExtraTargets = 0;
 };
 
+struct RainOfFireMasteryEffects
+{
+    float IronDamageBonusPct = 0.0f;
+    float BronzeRadiusMultiplier = 1.0f;
+    float SilverCorruptionBonusPct = 0.0f;
+    float GoldSplashChancePct = 0.0f;
+    float GoldSplashDamagePct = 0.0f;
+    float DiamondCorruptionBonusPct = 0.0f;
+};
+
 int32 constexpr HAUNT_DIAMOND_DOT_MAX_DURATION_MS = 60000;
 uint32 constexpr HAUNT_XP_GUARD_MS = 250;
 uint32 constexpr SHADOW_BOLT_XP_GUARD_MS = 250;
 uint32 constexpr CHAOS_BOLT_XP_GUARD_MS = 600;
+uint32 constexpr RAIN_OF_FIRE_XP_GUARD_MS = 500;
 float constexpr SHADOW_BOLT_SILVER_SPLASH_RADIUS = 8.0f;
 float constexpr SHADOW_BOLT_DIAMOND_SEARCH_RADIUS = 25.0f;
 float constexpr CHAOS_BOLT_DIAMOND_SEARCH_RADIUS = 25.0f;
+float constexpr RAIN_OF_FIRE_GOLD_SPLASH_RADIUS = 8.0f;
 float constexpr CHAOS_BOLT_GOLD_EXECUTE_HEALTH_PCT = 35.0f;
 float constexpr SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_PER_LEVEL = 0.30f;
 float constexpr SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_MAX_MULTIPLIER = 25.0f;
@@ -178,6 +190,60 @@ ChaosBoltMasteryEffects BuildChaosBoltMasteryEffects(SpellMastery::SpellMasteryP
         effects.DiamondExtraTargets = uint8((diamondLevel + 2) / 3); // 1..4
 
     return effects;
+}
+
+RainOfFireMasteryEffects BuildRainOfFireMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
+{
+    RainOfFireMasteryEffects effects;
+
+    uint8 const ironLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_IRON, config);
+    uint8 const bronzeLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_BRONZE, config);
+    uint8 const silverLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_SILVER, config);
+    uint8 const goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
+    uint8 const diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
+    uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
+
+    if (totalMasteryLevels > 0)
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 5.0f;
+
+    if (bronzeLevel > 0)
+        effects.BronzeRadiusMultiplier += 0.5f * (float(bronzeLevel) / 10.0f);
+
+    if (silverLevel > 0)
+        effects.SilverCorruptionBonusPct = 8.0f + (float(silverLevel - 1) * (17.0f / 9.0f)); // 8% -> 25%
+
+    if (goldLevel > 0)
+    {
+        effects.GoldSplashChancePct = 8.0f + (float(goldLevel - 1) * (22.0f / 9.0f)); // 8% -> 30%
+        effects.GoldSplashDamagePct = 25.0f + (float(goldLevel - 1) * (25.0f / 9.0f)); // 25% -> 50%
+    }
+
+    if (diamondLevel > 0)
+        effects.DiamondCorruptionBonusPct = 15.0f + (float(diamondLevel - 1) * (35.0f / 9.0f)); // 15% -> 50%
+
+    return effects;
+}
+
+bool IsRainOfFireTriggerSpellId(uint32 spellId)
+{
+    switch (spellId)
+    {
+        case 42223:
+        case 42224:
+        case 42225:
+        case 42226:
+        case 42218:
+        case 47817:
+        case 47818:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool HasCorruptionFromCaster(Unit* target, Player* caster)
+{
+    return target && caster && target->GetAuraOfRankedSpell(SpellMastery::SPELL_WARLOCK_CORRUPTION_RANK_1, caster->GetGUID());
 }
 
 bool IsWarlockPeriodicDotAura(Aura const* aura, ObjectGuid casterGuid)
@@ -729,9 +795,131 @@ private:
     bool _manaRefundApplied = false;
 };
 
+class spell_warl_rain_of_fire_mastery : public SpellScript
+{
+    PrepareSpellScript(spell_warl_rain_of_fire_mastery);
+
+    bool Load() override
+    {
+        if (!GetCaster() || !GetCaster()->IsPlayer())
+            return false;
+
+        _playerCaster = GetCaster()->ToPlayer();
+        _isRainOfFireTrigger = IsRainOfFireTriggerSpellId(GetSpellInfo()->Id);
+        _config = _isRainOfFireTrigger
+            ? SpellMastery::GetManagedSpellConfigByBaseSpell(SpellMastery::SPELL_WARLOCK_RAIN_OF_FIRE_RANK_1)
+            : SpellMastery::GetManagedSpellConfigForSpell(GetSpellInfo()->Id);
+
+        if (!_config || _config->BaseSpellId != SpellMastery::SPELL_WARLOCK_RAIN_OF_FIRE_RANK_1)
+            return false;
+
+        SpellMastery::SpellMasteryProgress const& progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
+        _effects = BuildRainOfFireMasteryEffects(progress, *_config);
+        _isTriggeredCast = GetSpell()->IsTriggered();
+
+        if (!_isRainOfFireTrigger && _effects.BronzeRadiusMultiplier > 1.0f)
+            GetSpell()->SetSpellValue(SPELLVALUE_RADIUS_MOD, int32(std::lround(_effects.BronzeRadiusMultiplier * 10000.0f)));
+
+        return true;
+    }
+
+    void HandleOnHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target))
+            return;
+
+        int32 hitDamage = GetHitDamage();
+        if (hitDamage <= 0)
+            return;
+
+        hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+
+        if (_effects.IronDamageBonusPct > 0.0f)
+        {
+            int32 const scaled = int32(std::lround(float(hitDamage) * (1.0f + (_effects.IronDamageBonusPct / 100.0f))));
+            hitDamage = std::max(hitDamage, scaled);
+        }
+
+        if (_effects.SilverCorruptionBonusPct > 0.0f && HasCorruptionFromCaster(target, _playerCaster))
+        {
+            int32 const scaled = int32(std::lround(float(hitDamage) * (1.0f + (_effects.SilverCorruptionBonusPct / 100.0f))));
+            hitDamage = std::max(hitDamage, scaled);
+        }
+
+        if (_effects.DiamondCorruptionBonusPct > 0.0f && HasCorruptionFromCaster(target, _playerCaster))
+        {
+            int32 const scaled = int32(std::lround(float(hitDamage) * (1.0f + (_effects.DiamondCorruptionBonusPct / 100.0f))));
+            hitDamage = std::max(hitDamage, scaled);
+        }
+
+        SetHitDamage(hitDamage);
+        _finalHitDamage = hitDamage;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !_playerCaster->IsValidAttackTarget(target) || _finalHitDamage <= 0)
+            return;
+
+        bool const allowTriggeredXp = _isRainOfFireTrigger;
+        if (!_xpAwarded && (allowTriggeredXp || !_isTriggeredCast) && SpellMastery::ShouldAwardSpellMasteryXp(_playerCaster, *_config, RAIN_OF_FIRE_XP_GUARD_MS))
+        {
+            SpellMastery::AddSpellMasteryXp(_playerCaster, *_config, SpellMastery::SPELL_MASTERY_XP_PER_HIT);
+            _xpAwarded = true;
+        }
+
+        TryApplyGoldSplash(target, _finalHitDamage);
+    }
+
+    void TryApplyGoldSplash(Unit* primaryTarget, int32 hitDamage)
+    {
+        if (!primaryTarget || hitDamage <= 0 || _effects.GoldSplashChancePct <= 0.0f || _effects.GoldSplashDamagePct <= 0.0f)
+            return;
+
+        if (!roll_chance_f(_effects.GoldSplashChancePct))
+            return;
+
+        int32 const splashDamage = std::max<int32>(1, int32(std::lround((float(hitDamage) * _effects.GoldSplashDamagePct) / 100.0f)));
+        std::list<Unit*> nearbyUnits;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(primaryTarget, _playerCaster, RAIN_OF_FIRE_GOLD_SPLASH_RADIUS);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(primaryTarget, nearbyUnits, check);
+        Cell::VisitObjects(primaryTarget, searcher, RAIN_OF_FIRE_GOLD_SPLASH_RADIUS);
+
+        for (Unit* candidate : nearbyUnits)
+        {
+            if (!candidate || candidate == primaryTarget || !_playerCaster->IsValidAttackTarget(candidate) || !candidate->IsAlive())
+                continue;
+
+            SpellNonMeleeDamage splashInfo(_playerCaster, candidate, GetSpellInfo(), GetSpellInfo()->SchoolMask);
+            splashInfo.damage = splashDamage;
+            _playerCaster->SendSpellNonMeleeDamageLog(&splashInfo);
+            _playerCaster->DealSpellDamage(&splashInfo, false);
+            break;
+        }
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_warl_rain_of_fire_mastery::HandleOnHit);
+        AfterHit += SpellHitFn(spell_warl_rain_of_fire_mastery::HandleAfterHit);
+    }
+
+private:
+    Player* _playerCaster = nullptr;
+    SpellMastery::ManagedSpellConfig const* _config = nullptr;
+    RainOfFireMasteryEffects _effects;
+    bool _isTriggeredCast = false;
+    bool _isRainOfFireTrigger = false;
+    bool _xpAwarded = false;
+    int32 _finalHitDamage = 0;
+};
+
 void AddSC_spell_mastery_warlock()
 {
     RegisterSpellAndAuraScriptPair(spell_warl_haunt_mastery, spell_warl_haunt_mastery_aura);
     RegisterSpellScript(spell_warl_shadow_bolt_mastery);
     RegisterSpellScript(spell_warl_chaos_bolt_mastery);
+    RegisterSpellScript(spell_warl_rain_of_fire_mastery);
 }
