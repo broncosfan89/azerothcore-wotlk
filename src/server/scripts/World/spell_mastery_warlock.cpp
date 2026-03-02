@@ -82,6 +82,7 @@ float constexpr SHADOW_BOLT_SILVER_SPLASH_RADIUS = 8.0f;
 float constexpr SHADOW_BOLT_DIAMOND_SEARCH_RADIUS = 25.0f;
 float constexpr CHAOS_BOLT_DIAMOND_SEARCH_RADIUS = 25.0f;
 float constexpr RAIN_OF_FIRE_GOLD_SPLASH_RADIUS = 8.0f;
+float constexpr RAIN_OF_FIRE_SPELL_POWER_COEFFICIENT = 0.15f;
 float constexpr CHAOS_BOLT_GOLD_EXECUTE_HEALTH_PCT = 35.0f;
 float constexpr SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_PER_LEVEL = 0.30f;
 float constexpr SHADOW_BOLT_LOW_RANK_LEVEL_SCALING_MAX_MULTIPLIER = 25.0f;
@@ -834,6 +835,13 @@ class spell_warl_rain_of_fire_mastery : public SpellScript
             return;
 
         hitDamage = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), hitDamage);
+
+        if (int32 const spellPower = _playerCaster->SpellBaseDamageBonusDone(GetSpellInfo()->GetSchoolMask()); spellPower > 0)
+        {
+            int32 const spellPowerDamage = int32(std::lround(float(spellPower) * RAIN_OF_FIRE_SPELL_POWER_COEFFICIENT));
+            if (spellPowerDamage > 0)
+                hitDamage += spellPowerDamage;
+        }
 
         if (_effects.IronDamageBonusPct > 0.0f)
         {

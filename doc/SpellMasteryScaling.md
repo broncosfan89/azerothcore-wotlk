@@ -1,62 +1,44 @@
-# Spell Mastery Scaling Tracker
+# Spell Mastery Scaling Reference
 
 This file is the canonical tuning reference for Spell Mastery output scaling.
 
 ## Update Rule
 
-When any mastery tuning value changes in C++:
+When mastery tuning changes in C++:
 
 1. Update this file in the same change.
-2. Include the affected spell section and the new numbers.
-3. Keep formulas human-readable (full words, not letter shorthand).
+2. Include the affected spell section and new values.
+3. Keep formulas human-readable.
 
 ## Definitions
 
-- Iron level, Bronze level, Silver level, Gold level, Diamond level: effective tier level values for a spell.
-- Total mastery levels: Iron level + Bronze level + Silver level + Gold level + Diamond level.
+- Iron level, Bronze level, Silver level, Gold level, Diamond level: effective tier levels for a spell.
+- Total mastery levels: Iron + Bronze + Silver + Gold + Diamond.
 
 ## Global Early-Access Scaling
 
-Some spells are dynamically scaled based on character level.
+Some spells use dynamic early-access scaling.
 
-- Early-access downscaling formula:
+- Early-access downscaling:
   - `scale = clamp((player level + 4) / (spell natural level + 4), 0.05, 1.0)`
-- Low-rank normalization (for rank 1 to rank 3 spells):
+- Low-rank normalization (rank 1 to rank 3):
   - `scale = clamp(1 + (player level - spell natural level) * 0.08, 1.0, 8.0)`
-- Source: `src/server/scripts/World/spell_mastery_fireball.cpp`
 
-## Managed Spell Baselines
+Source: `src/server/scripts/World/spell_mastery_fireball.cpp`
+
+## Managed Spell Baselines (Current)
 
 Configured in `src/server/scripts/World/spell_mastery_fireball.cpp`:
 
-- Fireball baseline rank: Rank 3
-- Pyroblast baseline rank: Rank 10
-- Flamestrike baseline rank: Rank 3
-- Frostbolt baseline rank: Rank 1
-- Ice Lance baseline rank: Rank 1
-- Blizzard baseline rank: Rank 1
-- Cone of Cold baseline rank: Rank 1
-- Arcane Blast baseline rank: Rank 1
-- Arcane Missiles baseline rank: Rank 1
-- Arcane Barrage baseline rank: Rank 1
-- Arcane Explosion baseline rank: Rank 1
-- Chain Lightning baseline rank: Rank 1
-- Lava Burst baseline rank: Rank 1
-- Power Word: Shield baseline rank: Rank 1
-- Consecration baseline rank: Rank 1
-- Thunder Clap baseline rank: Rank 9
-- Killing Spree baseline: base spell
-- Fan of Knives baseline rank: Rank 1
-- Rupture baseline rank: Rank 1
-- Volley baseline rank: Rank 1
-- Aimed Shot baseline rank: Rank 1
-- Serpent Sting baseline rank: Rank 1
-- Haunt baseline rank: Rank 3
-- Shadow Bolt baseline rank: Rank 1
-- Rejuvenation baseline rank: Rank 5
-- Regrowth baseline rank: Rank 3
-- Rip baseline rank: Rank 1
-- Swipe (Cat) baseline rank: Rank 1
+- Mage: Fireball (Rank 3), Pyroblast (Rank 1), Flamestrike (Rank 3), Frostbolt (Rank 1), Ice Lance (Rank 1), Blizzard (Rank 1), Cone of Cold (Rank 1), Arcane Blast (Rank 1), Arcane Missiles (Rank 1), Arcane Barrage (Rank 1), Arcane Explosion (Rank 1)
+- Shaman: Chain Lightning (Rank 1), Lava Burst (Rank 1)
+- Priest: Power Word: Shield (Rank 1), Penance (Rank 1), Flash Heal (Rank 1)
+- Paladin: Consecration (Rank 1)
+- Warrior: Thunder Clap (Rank 9 baseline rank cap), Revenge (Rank 1)
+- Rogue: Killing Spree, Fan of Knives (Rank 1), Rupture (Rank 1)
+- Hunter: Volley (Rank 1), Aimed Shot (Rank 1), Serpent Sting (Rank 1)
+- Warlock: Haunt (Rank 3 baseline rank cap), Shadow Bolt (Rank 1), Chaos Bolt (Rank 1), Rain of Fire (Rank 1)
+- Druid: Rejuvenation (Rank 5 baseline rank cap), Regrowth (Rank 3 baseline rank cap), Rip (Rank 1), Swipe (Cat) (Rank 1)
 
 ## Mage
 
@@ -64,193 +46,91 @@ Source: `src/server/scripts/World/spell_mastery_mage.cpp`
 
 ### Fireball
 
-- Direct damage bonus percent:
-  - `20 * Iron level + 20 * Bronze level + 20 * Silver level + 25 * Gold level + 30 * Diamond level`
-- Silver splash damage percent:
-  - `35 + (Silver level - 1) * (45 / 9)` (35% to 80%)
-- Gold burn contribution percent (into ignite pool):
-  - `10 + (Gold level - 1) * (15 / 9)` (10% to 25%)
+- Iron/Global: damage bonus = `20*Iron + 20*Bronze + 20*Silver + 25*Gold + 30*Diamond`.
+- Bronze: crit chance `5% -> 23%`.
+- Silver: splash damage `35% -> 80%`.
+- Gold: burn contribution `10% -> 25%` of direct hit.
+- Diamond: cast-time multiplier `0.05 -> 0.01`.
 
 ### Pyroblast
 
-- Direct damage bonus percent:
-  - `2 * Total mastery levels`
-- Silver splash damage percent:
-  - `35 + (Silver level - 1) * (45 / 9)` (35% to 80%)
-- Gold burn contribution percent:
-  - `20 + (Gold level - 1) * (30 / 9)` (20% to 50%)
+- Iron/Global: damage bonus = `2 * Total mastery levels`.
+- Bronze: crit chance `5% -> 23%`.
+- Silver: splash damage `35% -> 80%`.
+- Gold: burn contribution `20% -> 50%`.
+- Diamond: cast-time multiplier `0.05 -> 0.01`.
 
 ### Flamestrike
 
-- Damage bonus percent (initial and periodic):
-  - `20 * Iron level + 20 * Bronze level + 20 * Silver level + 25 * Gold level + 30 * Diamond level`
-- Silver extra damage pass percent:
-  - `8 + (Silver level - 1) * (14 / 9)` (8% to 22%)
-- Gold burn damage percent:
-  - `10 + (Gold level - 1) * (15 / 9)` (10% to 25%)
+- Iron/Global: damage bonus = `20*Iron + 20*Bronze + 20*Silver + 25*Gold + 30*Diamond`.
+- Bronze: radius multiplier `x1.05 -> x1.50`.
+- Silver: extra damage pass `8% -> 22%`.
+- Gold: burn damage `10% -> 25%`, max stacks up to `8`.
+- Diamond: cast-time multiplier `0.80 -> 0.10`.
 
 ### Frostbolt
 
-- Iron direct damage bonus percent:
-  - `8 * Iron level`
-- Bronze crit chance bonus percent against chilled/frozen targets:
-  - `2 * Bronze level`
-- Silver mark bonus percent consumed by Ice Lance:
-  - `20 + (Silver level - 1) * (40 / 9)` (20% to 60%)
-- Gold bonus damage percent against chilled/frozen targets:
-  - `10 + (Gold level - 1) * (20 / 9)` (10% to 30%)
-- Diamond cast time multiplier:
-  - `0.90 - (Diamond level - 1) * (0.50 / 9)` (90% to 40% of base cast time)
+- Iron: damage bonus `8% -> 80%`.
+- Bronze: crit vs chilled/frozen `2% -> 20%`.
+- Silver: Ice Lance mark bonus `20% -> 60%`.
+- Gold: bonus damage vs chilled/frozen `10% -> 30%`.
+- Diamond: cast-time multiplier `0.90 -> 0.40`.
 
 ### Ice Lance
 
-- Iron direct damage bonus percent:
-  - `8 * Iron level`
-- Bronze bonus damage percent against chilled/frozen targets:
-  - `5 * Bronze level`
-- Silver crit chance bonus percent against chilled/frozen targets:
-  - `2 * Silver level`
-- Gold ricochet percent:
-  - `20 + (Gold level - 1) * (30 / 9)` (20% to 50%)
-- Diamond second-lance bonus damage percent:
-  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%)
+- Iron: damage bonus `8% -> 80%`.
+- Bronze: bonus vs chilled/frozen `5% -> 50%`.
+- Silver: crit vs chilled/frozen `2% -> 20%`.
+- Gold: ricochet `20% -> 50%`.
+- Diamond: second lance hit `20% -> 50%`.
 
 ### Blizzard
 
-- Iron direct damage bonus percent:
-  - `6 * Iron level`
-- Bronze radius multiplier:
-  - `1 + 0.10 * Bronze level`
-- Silver bonus damage percent against chilled/frozen targets:
-  - `2 * Silver level`
-- Gold hail proc chance percent:
-  - `5 + (Gold level - 1) * (25 / 9)` (5% to 30%)
-- Gold hail proc damage percent:
-  - `40` of hit damage
-- Diamond bonus damage percent against chilled/frozen targets:
-  - `20 + (Diamond level - 1) * (40 / 9)` (20% to 60%)
+- Iron: damage bonus `6% -> 60%`.
+- Bronze: radius multiplier `x1.10 -> x2.00`.
+- Silver: bonus damage `2% -> 20%`.
+- Gold: hail proc chance `5% -> 30%`.
+- Diamond: bonus damage `20% -> 60%`.
 
 ### Cone of Cold
 
-- Iron direct damage bonus percent:
-  - `8 * Iron level`
-- Bronze radius multiplier:
-  - `1 + 0.05 * Bronze level`
-- Silver frost vulnerability percent applied to target:
-  - `2 * Silver level`
-- Gold bonus damage percent against chilled/frozen targets:
-  - `10 + (Gold level - 1) * (20 / 9)` (10% to 30%)
-- Diamond second pulse percent:
-  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%)
+- Iron: damage bonus `8% -> 80%`.
+- Bronze: radius multiplier `x1.05 -> x1.50`.
+- Silver: vulnerability debuff `2% -> 20%`.
+- Gold: bonus damage `10% -> 30%`.
+- Diamond: second pulse `20% -> 50%`.
 
 ### Arcane Blast
 
-- Iron direct damage bonus percent:
-  - `8 * Iron level`
-- Bronze mana refund percent:
-  - `4 + (Bronze level - 1) * (10 / 9)` (4% to 14%)
-- Silver bonus damage per arcane charge percent:
-  - `4 + (Silver level - 1) * (8 / 9)` (4% to 12%) per charge
-- Gold bonus damage at 4 charges percent:
-  - `10 + (Gold level - 1) * (20 / 9)` (10% to 30%)
-- Diamond splash percent at 4 charges:
-  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%)
+- Iron: damage bonus `8% -> 80%`.
+- Bronze: mana refund `4% -> 14%`.
+- Silver: per-charge bonus `4% -> 12%`.
+- Gold: 4-charge bonus `10% -> 30%`.
+- Diamond: 4-charge splash `20% -> 50%`.
 
 ### Arcane Missiles
 
-- Iron direct damage bonus percent:
-  - `6 * Iron level`
-- Bronze cast-time reduction:
-  - `100 + 45 * (Bronze level - 1)` milliseconds
-- Silver mana return percent:
-  - `4 + (Silver level - 1) * (10 / 9)` (4% to 14%)
-- Gold extra missile proc chance percent:
-  - `5 + (Gold level - 1) * (25 / 9)` (5% to 30%)
-- Gold extra missile proc damage percent:
-  - `40` of hit damage
-- Diamond cleave percent:
-  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%)
+- Iron: damage bonus `6% -> 60%`.
+- Bronze: cast-time/tick reduction `100ms -> 505ms`.
+- Silver: mana return `4% -> 14%`.
+- Gold: extra missile chance `5% -> 30%`.
+- Diamond: cleave `20% -> 50%`.
 
 ### Arcane Barrage
 
-- Iron direct damage bonus percent:
-  - `8 * Iron level`
-- Bronze extra targets:
-  - `minimum(3, 1 + floor((Bronze level - 1) / 3))`
-- Silver bonus damage per arcane charge percent:
-  - `4 + (Silver level - 1) * (8 / 9)` (4% to 12%) per charge
-- Gold flat bonus damage percent:
-  - `10 + (Gold level - 1) * (20 / 9)` (10% to 30%)
-- Diamond charge reset chance percent:
-  - `5 + (Diamond level - 1) * (25 / 9)` (5% to 30%)
+- Iron: damage bonus `8% -> 80%`.
+- Bronze: extra targets up to `3`.
+- Silver: per-charge bonus `4% -> 12%`.
+- Gold: flat bonus `10% -> 30%`.
+- Diamond: charge reset chance `5% -> 30%`.
 
 ### Arcane Explosion
 
-- Iron direct damage bonus percent:
-  - `6 * Iron level`
-- Bronze mana refund percent:
-  - `3 + (Bronze level - 1) * (9 / 9)` (3% to 12%)
-- Silver radius multiplier:
-  - `1 + 0.10 * Silver level`
-- Gold clearcasting proc chance percent:
-  - `5 + (Gold level - 1) * (20 / 9)` (5% to 25%)
-- Diamond aftershock percent (every 4th cast):
-  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%)
-
-## Druid
-
-Source: `src/server/scripts/World/spell_mastery_druid.cpp`
-
-### Rejuvenation
-
-- Periodic healing bonus percent:
-  - `40 * Iron level + 40 * Bronze level + 40 * Silver level + 50 * Gold level + 60 * Diamond level`
-- Silver splash healing percent:
-  - `15 + (Silver level - 1) * (25 / 9)` (15% to 40%)
-- Gold extra stack bonus healing percent:
-  - `8` per extra stack
-- Diamond bonus tick percent:
-  - `20 + (Diamond level - 1) * (60 / 9)` (20% to 80%)
-
-### Regrowth
-
-- Direct and periodic healing bonus percent:
-  - `40 * Iron level + 40 * Bronze level + 40 * Silver level + 50 * Gold level + 60 * Diamond level`
-- Silver splash healing percent:
-  - `12 + (Silver level - 1) * (20 / 9)` (12% to 32%)
-- Gold extra stack bonus healing percent:
-  - `10` per extra stack
-- Diamond bonus direct-heal percent:
-  - `20 + (Diamond level - 1) * (60 / 9)` (20% to 80%)
-
-### Swipe (Cat)
-
-- Direct damage bonus percent:
-  - `4 * Total mastery levels`
-- Gold bleed percent:
-  - `10 + (Gold level - 1) * (30 / 9)` (10% to 40%)
-- Diamond self-heal percent from dealt damage:
-  - `8 + (Diamond level - 1) * (22 / 9)` (8% to 30%)
-
-### Rip
-
-- Periodic damage bonus percent:
-  - `25 * Total mastery levels`
-- Silver extra damage taken percent on affected targets:
-  - `2 * Silver level`
-
-## Warrior
-
-Source: `src/server/scripts/World/spell_mastery_warrior.cpp`
-
-### Thunder Clap
-
-- Direct damage bonus percent:
-  - `10 * Iron level + 10 * Bronze level + 10 * Silver level + 12.5 * Gold level + 15 * Diamond level`
-- Gold echo damage percent:
-  - `10 + (Gold level - 1) * (20 / 9)` (10% to 30%)
-- Diamond Rend immediate tick bonus percent:
-  - `10 + (Diamond level - 1) * (40 / 9)` (10% to 50%)
+- Iron: damage bonus `6% -> 60%`.
+- Bronze: mana refund `3% -> 12%`.
+- Silver: radius multiplier `x1.10 -> x2.00`.
+- Gold: clearcasting chance `5% -> 25%`.
+- Diamond: aftershock `20% -> 50%`.
 
 ## Shaman
 
@@ -258,30 +138,21 @@ Source: `src/server/scripts/World/spell_mastery_shaman.cpp`
 
 ### Chain Lightning
 
-- Direct damage bonus percent:
-  - `2 * Total mastery levels`
-- Gold nature vulnerability per stack percent:
-  - `1 + (Gold level - 1) * (1.5 / 9)` (1% to 2.5% per stack)
+- Iron/Global: damage bonus = `2 * Total mastery levels`.
+- Bronze: bounce reduction penalty scales down `30% -> 0%`.
+- Silver: extra targets `+1 -> +10`.
+- Gold: nature-taken stack system:
+  - max stacks = Gold level
+  - per-stack bonus `1.0% -> 2.5%`.
+- Diamond: instant reset behavior enabled.
 
 ### Lava Burst
 
-- Direct damage bonus percent:
-  - `1 * Total mastery levels`
-- Silver fire vulnerability percent:
-  - `2.5 * Silver level`
-
-## Paladin
-
-Source: `src/server/scripts/World/spell_mastery_paladin.cpp`
-
-### Consecration
-
-- Damage bonus percent:
-  - `8 * Total mastery levels`
-- Silver enemy outgoing damage reduction percent:
-  - `1.5 * Silver level`
-- Gold outgoing damage bonus while in consecration:
-  - Per stack: `1.0 + (0.2 * Gold level)` percent
+- Iron: cooldown reduction up to `-6000ms`.
+- Bronze/Global: damage bonus = `0.5 * Total mastery levels`.
+- Silver: fire-taken debuff `2.5% -> 25%`.
+- Gold: spread Flame Shock to `1 -> 10` targets.
+- Diamond: Flame Shock burst behavior enabled.
 
 ## Priest
 
@@ -289,14 +160,65 @@ Source: `src/server/scripts/World/spell_mastery_priest.cpp`
 
 ### Power Word: Shield
 
-- Shield absorb bonus percent:
-  - `56 * Total mastery levels`
-- Silver heal-over-time per tick percent (based on shield amount):
-  - `4 * Silver level`
-- Gold reflect percent (of absorbed damage):
-  - `15 + (6 * Gold level)`
-- Diamond shield-end heal percent:
-  - `minimum(100, 10 + 9 * Diamond level)`
+- Iron/Global: shield bonus = `39.2 * Total mastery levels` percent.
+- Bronze: Weakened Soul reduction up to `60%`.
+- Silver: HoT per tick `2.8% -> 28%`.
+- Gold: reflect `21% -> 75%`.
+- Diamond: end-heal `10% -> 100%`, radius `11 -> 20`.
+
+### Penance
+
+- Iron/Global: throughput bonus = `4 * Total mastery levels` percent.
+- Bronze: mana refund `3% -> 12%`.
+- Silver: crit chance `3% -> 18%`.
+- Gold:
+  - execute damage bonus `8% -> 30%`
+  - emergency heal bonus `10% -> 40%`.
+- Diamond: echo amount `20% -> 50%`.
+
+### Flash Heal
+
+- Iron/Global: heal bonus = `3 * Total mastery levels` percent.
+- Bronze: mana refund `2% -> 10%`.
+- Silver: crit chance `2% -> 15%`.
+- Gold: splash heal `10% -> 30%`.
+- Diamond: emergency heal `15% -> 50%`.
+
+## Paladin
+
+Source: `src/server/scripts/World/spell_mastery_paladin.cpp`
+
+### Consecration
+
+- Iron/Global: damage bonus = `8 * Total mastery levels` percent.
+- Bronze: radius multiplier `x1.05 -> x1.50`.
+- Silver: enemy outgoing damage reduction `1.5% -> 15%`.
+- Gold:
+  - max stacks = Gold level
+  - per-stack damage bonus = `1.0 + 0.2*Gold` percent.
+- Diamond: heal from dealt hit damage `300% -> 900%`.
+
+## Warrior
+
+Source: `src/server/scripts/World/spell_mastery_warrior.cpp`
+
+### Thunder Clap
+
+- Iron/Global: damage bonus = `5*Iron + 5*Bronze + 5*Silver + 5*Gold + 5*Diamond`.
+- Bronze: every 2 Bronze levels grants:
+  - `+6%` radius (up to `+30%`)
+  - `-400ms` cooldown (up to `-2000ms`).
+- Silver: apply Rend to `1 -> 10` targets.
+- Gold: echo pulse `10% -> 30%`.
+- Diamond: immediate Rend tick `10% -> 50%`.
+
+### Revenge
+
+- Iron/Global: damage bonus = `5 * Total mastery levels` percent.
+- Bronze: heal `1% -> 3%` max HP.
+- Silver: damage reduction `3% -> 12%`, duration `3500ms -> 8000ms`.
+- Gold: extra targets `1 -> 10`.
+- Diamond: reflect `5% -> 15%`, duration `4500ms -> 9000ms`.
 
 ## Rogue
 
@@ -304,36 +226,27 @@ Source: `src/server/scripts/World/spell_mastery_rogue.cpp`
 
 ### Killing Spree
 
-- Strike damage bonus percent:
-  - `8 * Total mastery levels`
-- Gold bleed percent:
-  - `20 + (Gold level - 1) * (30 / 9)` (20% to 50%)
+- Iron: attack count `6 -> 15` (base 5 plus Iron scaling, capped).
+- Bronze/Global: damage bonus = `8 * Total mastery levels` percent.
+- Silver: cooldown reduced to `45s`.
+- Gold: bleed amount `20% -> 50%`.
+- Diamond: extra strike chance `5% -> 30%`.
 
 ### Fan of Knives
 
-- Iron energy refund (effective cost from 50 down to 20 at Iron 10):
-  - `3 * Iron level` energy refunded after cast
-- Damage bonus percent (Bronze scaling continues through Diamond):
-  - `2 * Total mastery levels`
-- Silver radius scaling (8 yards to 20 yards at Silver 10):
-  - Radius multiplier `1 + 1.5 * (Silver level / 10)`
-- Gold combo point generation:
-  - `minimum(5, Gold level)` combo points on first valid hit per cast
-- Diamond poison application:
-  - Applies Deadly Poison to each hit target
+- Iron: energy refund `3 -> 30`.
+- Bronze/Global: damage bonus = `4 * Total mastery levels` percent.
+- Silver: radius multiplier `x1.15 -> x2.50`.
+- Gold: combo points `1 -> 5` on first valid hit.
+- Diamond: apply poison on hit.
 
 ### Rupture
 
-- Periodic damage bonus percent:
-  - `25 * Total mastery levels`
-- Silver extra damage taken percent (applied to rupture periodic damage):
-  - `2 * Silver level`
-- Bronze tick interval:
-  - `500` milliseconds once Bronze is unlocked
-- Gold duration bonus:
-  - `500 * Gold level` milliseconds
-- Diamond combo-point normalization:
-  - Enables full-damage scaling at 1 combo point
+- Iron/Global: damage bonus = `5 * Total mastery levels` percent.
+- Bronze: tick interval `2000ms -> 500ms`.
+- Silver: self-heal from tick `2% -> 20%`.
+- Gold: duration bonus `500ms -> 5000ms`.
+- Diamond: full-damage scaling at 1 combo point enabled.
 
 ## Hunter
 
@@ -341,46 +254,32 @@ Source: `src/server/scripts/World/spell_mastery_hunter.cpp`
 
 ### Volley
 
-- Iron damage bonus percent:
-  - `10 * Iron level`
-- Bronze radius scaling:
-  - Radius multiplier `1 + 1.5 * (Bronze level / 10)`
-- Silver duration bonus:
-  - `1000 * Silver level` milliseconds
-- Gold tick-rate increase:
-  - Tick interval `1000 - round(500 * Gold level / 10)` milliseconds, minimum 500 milliseconds
-- Diamond AoE burst damage:
-  - `20 + (Diamond level - 1) * (40 / 9)` percent (20% to 60%) to enemies within 6 yards of each target hit
+- Iron/Global: damage bonus = `1.5 * Total mastery levels` percent.
+- Bronze: radius multiplier `x1.05 -> x1.50`.
+- Silver: faster tick interval `1000ms -> 750ms`.
+- Gold: spread Serpent Sting to `1 -> 10` targets.
+- Diamond: burst around hit target `5% -> 15%`.
 
 ### Aimed Shot
 
-- Charge damage scaling percent (based on charge ratio):
-  - `20 + 180 * charge ratio` (20% to 200%)
-- Total mana cost multiplier (before Bronze reduction):
-  - `0.25 + 1.75 * charge ratio` (25% to 200% of base mana cost)
-- Iron direct damage bonus percent:
-  - `5 * Iron level`
-- Bronze mana cost reduction percent:
-  - `2.5 * Bronze level`
-- Silver crit chance at 50%+ charge:
-  - `2 * Silver level`
-- Gold bonus damage at 70%+ charge:
-  - `10 + (Gold level - 1) * (20 / 9)` (10% to 30%)
-- Diamond splash damage at 90%+ charge:
-  - `20 + (Diamond level - 1) * (30 / 9)` (20% to 50%) in 8 yards
+- Base charge behavior:
+  - damage scale from charge ratio: `20% -> 200%`
+  - mana cost multiplier from charge ratio: `25% -> 200%` (before Bronze reduction).
+- Iron: damage bonus `5% -> 50%`.
+- Bronze: mana cost reduction `2.5% -> 25%`.
+- Silver: crit chance at half charge or higher `2% -> 20%`.
+- Gold: high-charge bonus (70%+ charge) `10% -> 30%`.
+- Diamond: splash at near-full charge (90%+ charge) `20% -> 50%`.
 
 ### Serpent Sting
 
-- Iron mana regeneration:
-  - `2 * Iron level` percent of max mana on successful application
-- Bronze periodic damage bonus percent:
-  - `6 * Bronze level`
-- Silver tick interval:
-  - `3000 - round(2000 * Silver level / 10)` milliseconds, minimum 1000 milliseconds
-- Gold spread:
-  - Up to `Gold level` nearby targets, each takes `20 + (Gold level - 1) * (20 / 9)` percent of each tick
-- Diamond detonation on natural expiration:
-  - AoE damage equal to `60 + 10 * (Diamond level - 1)` percent of tick damage
+- Iron: mana regen on application `2% -> 20%` of max mana.
+- Bronze/Global: damage bonus = `30 * Total mastery levels` percent.
+- Silver: faster tick interval `3000ms -> 1000ms`.
+- Gold:
+  - spread to `1 -> 10` targets
+  - spread damage `20% -> 40%`.
+- Diamond: natural-expire detonation `60% -> 150%` of tick damage.
 
 ## Warlock
 
@@ -388,22 +287,79 @@ Source: `src/server/scripts/World/spell_mastery_warlock.cpp`
 
 ### Haunt
 
-- Direct damage bonus percent:
-  - `10 * Total mastery levels`
-- Bronze periodic amplification percent:
-  - `20 + (Bronze level - 1) * (80 / 9)` (20% to 100%)
-- Silver return heal percent:
-  - `100 + (Silver level - 1) * (100 / 9)` (100% to 200%)
+- Iron/Global: impact damage bonus = `10 * Total mastery levels` percent.
+- Bronze: periodic amplification `20% -> 100%`.
+- Silver: return heal `100% -> 200%`.
+- Gold: cooldown reduction up to `-5000ms`.
+- Diamond: refresh and extend Warlock periodic DoTs (`1000ms -> 5000ms` extension).
 
 ### Shadow Bolt
 
-- Iron direct damage bonus percent:
-  - `8 * Iron level`
-- Bronze mana refund percent (effective mana-cost reduction):
-  - `6 + 2 * (Bronze level - 1)` (6% to 24%) of cast power cost
-- Silver splash damage percent:
-  - `20 + (Silver level - 1) * (30 / 9)` (20% to 50%) to nearby enemies
-- Gold bonus DoT per tick:
-  - Applies Corruption with at least `8 + (Gold level - 1) * (20 / 9)` percent of hit damage as per-tick value
-- Diamond extra target hits:
-  - Fires at up to `Diamond level` nearby additional targets
+- Iron/Global: damage bonus = `8 * Total mastery levels` percent.
+- Bronze: mana refund `6% -> 24%`.
+- Silver: splash damage `20% -> 50%`.
+- Gold: scaling Shadow DoT per tick `0.5% -> 2.75%` of hit.
+- Diamond: extra targets `1 -> 10`.
+
+### Chaos Bolt
+
+- Iron/Global: damage bonus = `6 * Total mastery levels` percent.
+- Bronze: mana refund `5% -> 20%`.
+- Silver: crit chance `5% -> 30%`.
+- Gold: execute bonus `10% -> 40%`.
+- Diamond: extra bolt targets `1 -> 4`.
+
+### Rain of Fire
+
+- Iron/Global: damage bonus = `5 * Total mastery levels` percent.
+- Bronze: radius multiplier `x1.05 -> x1.50`.
+- Silver: bonus vs your Corruption `8% -> 25%`.
+- Gold:
+  - splash chance `8% -> 30%`
+  - splash damage `25% -> 50%`.
+- Diamond: additional Corruption synergy bonus `15% -> 50%`.
+- Extra scaling: direct spell power contribution = `15%` of caster spell power per hit.
+
+## Druid
+
+Source: `src/server/scripts/World/spell_mastery_druid.cpp`
+
+### Rejuvenation
+
+- Iron/Global heal ramp: `40*Iron + 40*Bronze + 40*Silver + 50*Gold + 60*Diamond`.
+- Bronze:
+  - duration bonus `300ms -> 3000ms`
+  - extra ticks at Bronze level `5` and `10`.
+- Silver: splash heal `15% -> 40%`.
+- Gold:
+  - stack heal bonus = `8%`
+  - max stacks `2 -> 6`.
+- Diamond: bonus tick `20% -> 80%`.
+
+### Regrowth
+
+- Iron/Global heal ramp (direct and HoT): `40*Iron + 40*Bronze + 40*Silver + 50*Gold + 60*Diamond`.
+- Bronze:
+  - duration bonus `250ms -> 2500ms`
+  - extra ticks at Bronze level `5` and `10`.
+- Silver: splash heal `12% -> 32%`.
+- Gold:
+  - stack heal bonus = `10%`
+  - max stacks `2 -> 6`.
+- Diamond: bonus direct heal `20% -> 80%`.
+
+### Rip
+
+- Iron/Global: damage bonus = `8 * Total mastery levels` percent.
+- Bronze: tick interval becomes `500ms`.
+- Silver: damage-taken debuff `1% -> 10%`.
+- Gold: duration bonus `250ms -> 2500ms`.
+- Diamond: full-damage scaling at 1 combo point enabled.
+
+### Swipe (Cat)
+
+- Iron: energy cost reduction `2 -> 20`.
+- Bronze/Global: damage bonus = `4 * Total mastery levels` percent.
+- Silver: energy refund `2 -> 11`.
+- Gold: bleed amount `10% -> 40%`.
+- Diamond: self-heal from hit damage `8% -> 30%`.
