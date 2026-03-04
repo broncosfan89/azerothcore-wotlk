@@ -74,7 +74,7 @@ struct RipMasteryEffects
     int32 BronzeTickIntervalMs = 2000;
     float SilverDamageTakenPct = 0.0f;
     int32 GoldDurationBonusMs = 0;
-    bool DiamondFullDamageAtOneComboPoint = false;
+    float DiamondDamageBonusPct = 0.0f;
 };
 
 struct RejuvenationStackKey
@@ -163,7 +163,7 @@ uint32 constexpr REGROWTH_XP_GUARD_MS = 350;
 uint32 constexpr SWIPE_CAT_XP_GUARD_MS = 250;
 uint32 constexpr RIP_XP_GUARD_MS = 250;
 int32 constexpr RIP_BASE_TICK_INTERVAL_MS = 2000;
-int32 constexpr RIP_MIN_TICK_INTERVAL_MS = 500;
+int32 constexpr RIP_MIN_TICK_INTERVAL_MS = 1000;
 
 std::unordered_map<RejuvenationStackKey, RejuvenationStackState, RejuvenationStackKeyHash> RejuvenationStackStates;
 std::unordered_map<RegrowthStackKey, RegrowthStackState, RegrowthStackKeyHash> RegrowthStackStates;
@@ -296,18 +296,23 @@ RipMasteryEffects BuildRipMasteryEffects(SpellMastery::SpellMasteryProgress cons
     uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     if (totalMasteryLevels > 0)
-        effects.IronDamageBonusPct = float(totalMasteryLevels) * 8.0f;
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 2.0f;
 
     if (bronzeLevel > 0)
-        effects.BronzeTickIntervalMs = RIP_MIN_TICK_INTERVAL_MS;
+    {
+        effects.BronzeTickIntervalMs = std::max(
+            RIP_MIN_TICK_INTERVAL_MS,
+            RIP_BASE_TICK_INTERVAL_MS - (int32(bronzeLevel) * 100));
+    }
 
     if (silverLevel > 0)
-        effects.SilverDamageTakenPct = float(silverLevel) * 1.0f;
+        effects.SilverDamageTakenPct = float(silverLevel) * 0.4f;
 
     if (goldLevel > 0)
-        effects.GoldDurationBonusMs = int32(goldLevel) * 250;
+        effects.GoldDurationBonusMs = int32(goldLevel) * 100;
 
-    effects.DiamondFullDamageAtOneComboPoint = diamondLevel > 0;
+    if (diamondLevel > 0)
+        effects.DiamondDamageBonusPct = 3.0f + (float(diamondLevel - 1) * (12.0f / 9.0f));
     return effects;
 }
 
@@ -1053,21 +1058,11 @@ class spell_dru_rip_mastery_aura : public AuraScript
 
         amount = SpellMastery::ApplyEarlyAccessSpellScale(_playerCaster, GetSpellInfo(), amount);
 
-        float totalBonusPct = _effects.IronDamageBonusPct + _effects.SilverDamageTakenPct;
+        float totalBonusPct = _effects.IronDamageBonusPct + _effects.SilverDamageTakenPct + _effects.DiamondDamageBonusPct;
         if (totalBonusPct > 0.0f)
         {
             int32 const scaledAmount = int32(std::lround(float(amount) * (1.0f + (totalBonusPct / 100.0f))));
             amount = std::max(amount, scaledAmount);
-        }
-
-        if (_effects.DiamondFullDamageAtOneComboPoint)
-        {
-            uint8 comboPoints = std::max<uint8>(1, _playerCaster->GetComboPoints());
-            if (comboPoints < 5)
-            {
-                int32 const scaledForComboPoints = int32(std::lround(float(amount) * (5.0f / float(comboPoints))));
-                amount = std::max(amount, scaledForComboPoints);
-            }
         }
     }
 

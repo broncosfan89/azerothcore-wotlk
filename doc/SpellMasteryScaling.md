@@ -369,11 +369,11 @@ Source: `src/server/scripts/World/spell_mastery_druid.cpp`
 
 ### Rip
 
-- Iron/Global: damage bonus = `8 * Total mastery levels` percent.
-- Bronze: tick interval becomes `500ms`.
-- Silver: damage-taken debuff `1% -> 10%`.
-- Gold: duration bonus `250ms -> 2500ms`.
-- Diamond: full-damage scaling at 1 combo point enabled.
+- Iron/Global: damage bonus = `2 * Total mastery levels` percent.
+- Bronze: tick interval scales by level from `1900ms -> 1000ms` (base `2000ms`).
+- Silver: damage-taken debuff `0.4% -> 4.0%`.
+- Gold: duration bonus `100ms -> 1000ms`.
+- Diamond: flat periodic damage bonus `3% -> 15%`.
 
 ### Swipe (Cat)
 
