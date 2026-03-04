@@ -470,12 +470,12 @@ FireballMasteryEffects BuildFireballMasteryEffects(SpellMastery::SpellMasteryPro
     uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
 
-    // Global output ramp: every tier level contributes % damage all the way through Diamond.
-    effects.DamageBonusPct += float(ironLevel) * 20.0f;
-    effects.DamageBonusPct += float(bronzeLevel) * 20.0f;
-    effects.DamageBonusPct += float(silverLevel) * 20.0f;
-    effects.DamageBonusPct += float(goldLevel) * 25.0f;
-    effects.DamageBonusPct += float(diamondLevel) * 30.0f;
+    // Fireball keeps a strong ramp, but at lower per-tier coefficients to avoid over-scaling.
+    effects.DamageBonusPct += float(ironLevel) * 10.0f;
+    effects.DamageBonusPct += float(bronzeLevel) * 5.0f;
+    effects.DamageBonusPct += float(silverLevel) * 6.0f;
+    effects.DamageBonusPct += float(goldLevel) * 8.0f;
+    effects.DamageBonusPct += float(diamondLevel) * 10.0f;
 
     if (bronzeLevel > 0)
     {
@@ -493,7 +493,7 @@ FireballMasteryEffects BuildFireballMasteryEffects(SpellMastery::SpellMasteryPro
     if (diamondLevel > 0)
     {
         effects.HasDiamondCastTime = true;
-        effects.DiamondCastTimeMultiplier = 0.05f - (float(diamondLevel - 1) * (0.04f / 9.0f));
+        effects.DiamondCastTimeMultiplier = 0.80f - (float(diamondLevel - 1) * (0.35f / 9.0f));
     }
 
     return effects;

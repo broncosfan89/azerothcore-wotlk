@@ -44,7 +44,7 @@ struct ChainLightningMasteryEffects
     uint8 SilverExtraTargets = 0;
     uint8 GoldMaxStacks = 0;
     float GoldNatureTakenPctPerStack = 0.0f;
-    bool HasDiamondInstantReset = false;
+    float DiamondInstantResetChancePct = 0.0f;
 };
 
 struct LavaBurstMasteryEffects
@@ -140,21 +140,23 @@ ChainLightningMasteryEffects BuildChainLightningMasteryEffects(SpellMastery::Spe
     uint32 const totalMasteryLevels = uint32(ironLevel) + uint32(bronzeLevel) + uint32(silverLevel) + uint32(goldLevel) + uint32(diamondLevel);
 
     if (totalMasteryLevels > 0)
-        effects.IronDamageBonusPct = float(totalMasteryLevels) * 2.0f;
+        effects.IronDamageBonusPct = float(totalMasteryLevels) * 1.0f;
 
     if (bronzeLevel > 0)
-        effects.BronzeJumpReductionPct = std::max(0.0f, 30.0f * (1.0f - (float(bronzeLevel) / 10.0f)));
+        effects.BronzeJumpReductionPct = std::max(12.0f, 30.0f * (1.0f - (float(bronzeLevel) / 10.0f)));
 
     if (silverLevel > 0)
-        effects.SilverExtraTargets = silverLevel;
+        effects.SilverExtraTargets = uint8((silverLevel + 1) / 2);
 
     if (goldLevel > 0)
     {
-        effects.GoldMaxStacks = goldLevel;
-        effects.GoldNatureTakenPctPerStack = 1.0f + (float(goldLevel - 1) * (1.5f / 9.0f));
+        effects.GoldMaxStacks = std::min<uint8>(5, uint8(1 + (goldLevel / 2)));
+        effects.GoldNatureTakenPctPerStack = 0.6f + (float(goldLevel - 1) * (0.6f / 9.0f));
     }
 
-    effects.HasDiamondInstantReset = diamondLevel > 0;
+    if (diamondLevel > 0)
+        effects.DiamondInstantResetChancePct = 10.0f + (float(diamondLevel - 1) * (15.0f / 9.0f));
+
     return effects;
 }
 
@@ -454,7 +456,7 @@ class spell_sha_chain_lightning_mastery : public SpellScript
 
         ApplyOrRefreshGoldDebuff(target);
 
-        if (_effects.HasDiamondInstantReset && !_isTriggeredCast && !_diamondTriggered)
+        if (_effects.DiamondInstantResetChancePct > 0.0f && !_isTriggeredCast && !_diamondTriggered && roll_chance_f(_effects.DiamondInstantResetChancePct))
         {
             _diamondTriggered = true;
             _playerCaster->CastSpell(
