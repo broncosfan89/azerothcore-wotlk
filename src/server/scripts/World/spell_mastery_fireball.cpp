@@ -85,6 +85,12 @@ float constexpr EARLY_ACCESS_MIN_SCALE = 0.05f;
 uint8 constexpr LOW_RANK_LEVEL_SCALING_MAX_RANK = 3;
 float constexpr LOW_RANK_LEVEL_SCALING_PER_LEVEL = 0.08f;
 float constexpr LOW_RANK_LEVEL_SCALING_MAX_MULTIPLIER = 8.0f;
+float constexpr MASTERY_GEAR_MAGIC_POWER_SCALE_PER_POINT = 0.00004f;
+float constexpr MASTERY_GEAR_ATTACK_POWER_SCALE_PER_POINT = 0.00003f;
+float constexpr MASTERY_GEAR_MAX_BONUS = 0.30f;
+float constexpr MASTERY_EARLY_LEVEL_BONUS_PER_LEVEL = 0.003f;
+uint32 constexpr MASTERY_EARLY_LEVEL_BONUS_CAP_LEVEL = 25;
+int32 constexpr MASTERY_EARLY_LEVEL_POWER_FLOOR_PER_LEVEL = 25;
 
 ManagedSpellConfig const* GetManagedSpellConfigByBaseSpell(uint32 baseSpellId)
 {
@@ -166,13 +172,54 @@ float ComputeEarlyAccessSpellScale(Player* player, SpellInfo const* spellInfo)
     return 1.0f;
 }
 
+float ComputeMasteryGearScale(Player* player, SpellInfo const* spellInfo)
+{
+    if (!player || !spellInfo)
+        return 1.0f;
+
+    bool const isPhysicalScaling =
+        (spellInfo->GetSchoolMask() & ~SPELL_SCHOOL_MASK_NORMAL) == 0 &&
+        spellInfo->DmgClass != SPELL_DAMAGE_CLASS_MAGIC;
+
+    uint32 const playerLevel = std::max<uint32>(1, player->GetLevel());
+    float const levelFloorPower = float(playerLevel * uint32(MASTERY_EARLY_LEVEL_POWER_FLOOR_PER_LEVEL));
+
+    float statBonus = 0.0f;
+    if (isPhysicalScaling)
+    {
+        float const baseAttackPower = std::max(0.0f, player->GetTotalAttackPowerValue(BASE_ATTACK));
+        float const rangedAttackPower = std::max(0.0f, player->GetTotalAttackPowerValue(RANGED_ATTACK));
+        float const effectiveAttackPower = std::max(baseAttackPower, rangedAttackPower);
+        float const attackPowerForScaling = std::max(effectiveAttackPower, levelFloorPower);
+        statBonus = attackPowerForScaling * MASTERY_GEAR_ATTACK_POWER_SCALE_PER_POINT;
+    }
+    else
+    {
+        int32 const schoolSpellPower = std::max(0, player->SpellBaseDamageBonusDone(spellInfo->GetSchoolMask()));
+        int32 const schoolHealingPower = std::max(0, player->SpellBaseHealingBonusDone(spellInfo->GetSchoolMask()));
+        float const effectiveSpellPower = float(std::max(schoolSpellPower, schoolHealingPower));
+        float const spellPowerForScaling = std::max(effectiveSpellPower, levelFloorPower);
+        statBonus = spellPowerForScaling * MASTERY_GEAR_MAGIC_POWER_SCALE_PER_POINT;
+    }
+
+    statBonus = std::clamp(statBonus, 0.0f, MASTERY_GEAR_MAX_BONUS);
+
+    float const earlyLevelBonus =
+        float(std::min<uint32>(playerLevel, MASTERY_EARLY_LEVEL_BONUS_CAP_LEVEL)) * MASTERY_EARLY_LEVEL_BONUS_PER_LEVEL;
+
+    return 1.0f + statBonus + earlyLevelBonus;
+}
+
 int32 ApplyEarlyAccessSpellScale(Player* player, SpellInfo const* spellInfo, int32 amount)
 {
     if (!amount)
         return amount;
 
-    float const scale = ComputeEarlyAccessSpellScale(player, spellInfo);
-    if (scale >= 0.999f)
+    float const earlyAccessScale = ComputeEarlyAccessSpellScale(player, spellInfo);
+    float const masteryGearScale = ComputeMasteryGearScale(player, spellInfo);
+    float const scale = earlyAccessScale * masteryGearScale;
+
+    if (std::fabs(scale - 1.0f) < 0.001f)
         return amount;
 
     int32 scaledAmount = int32(std::lround(float(amount) * scale));

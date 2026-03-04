@@ -582,7 +582,12 @@ FrostboltMasteryEffects BuildFrostboltMasteryEffects(SpellMastery::SpellMasteryP
     uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
 
-    effects.IronDamageBonusPct = float(ironLevel) * 8.0f;
+    // Keep frostbolt's single-hit profile competitive with other mastery spells.
+    effects.IronDamageBonusPct = float(ironLevel) * 10.0f;
+    effects.IronDamageBonusPct += float(bronzeLevel) * 4.0f;
+    effects.IronDamageBonusPct += float(silverLevel) * 5.0f;
+    effects.IronDamageBonusPct += float(goldLevel) * 6.0f;
+    effects.IronDamageBonusPct += float(diamondLevel) * 7.0f;
 
     if (bronzeLevel > 0)
         effects.BronzeCritVsChilledPct = float(bronzeLevel) * 2.0f;
@@ -591,7 +596,7 @@ FrostboltMasteryEffects BuildFrostboltMasteryEffects(SpellMastery::SpellMasteryP
         effects.SilverIceLanceMarkPct = 20.0f + (float(silverLevel - 1) * (40.0f / 9.0f));
 
     if (goldLevel > 0)
-        effects.GoldBonusHitPct = 10.0f + (float(goldLevel - 1) * (20.0f / 9.0f));
+        effects.GoldBonusHitPct = 15.0f + (float(goldLevel - 1) * (25.0f / 9.0f));
 
     if (diamondLevel > 0)
     {

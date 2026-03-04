@@ -26,6 +26,25 @@ Some spells use dynamic early-access scaling.
 
 Source: `src/server/scripts/World/spell_mastery_fireball.cpp`
 
+## Global Gear Progression Scaling
+
+All mastery damage/heal/absorb amounts that route through `ApplyEarlyAccessSpellScale` also receive a unified gear progression multiplier.
+
+- Physical scaling (physical-school non-magic spells):
+  - Uses max of melee/ranged attack power.
+  - Bonus = `attack power * 0.00003`, capped at `30%`.
+- Magical/healing scaling:
+  - Uses max of school spell power and school healing power.
+  - Bonus = `power * 0.00004`, capped at `30%`.
+- Early-game floor:
+  - Effective power floor = `25 * player level` before applying coefficients.
+- Early-game progression bonus:
+  - `0.3% * player level`, capped at level `25` (max `7.5%`).
+
+Final multiplier:
+
+- `early-access scale * (1 + stat bonus + early-level bonus)`.
+
 ## Managed Spell Baselines (Current)
 
 Configured in `src/server/scripts/World/spell_mastery_fireball.cpp`:
