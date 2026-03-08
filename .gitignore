@@ -23,6 +23,8 @@
 /data/sql/custom/*
 /src/server/scripts/Custom/*
 !/src/server/scripts/Custom/README.md
+!/src/server/scripts/Custom/deadmines_breakout.cpp
+!/data/sql/custom/2026_03_08_01_world_deadmines_breakout.sql
 
 /*.override.yml
 /*.override.yaml
