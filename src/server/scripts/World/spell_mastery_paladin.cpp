@@ -24,6 +24,7 @@
 #include "Player.h"
 #include "Spell.h"
 #include "SpellAuras.h"
+#include "SpellMgr.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 
@@ -42,6 +43,8 @@ struct ConsecrationMasteryEffects
     uint8 GoldMaxStacks = 0;
     float GoldDamageBonusPctPerStack = 0.0f;
     float DiamondHealPctOfHitDamage = 0.0f;
+    float DiamondHealPctOfSpellPower = 0.0f;
+    bool DiamondHolyShieldRefresh = false;
 };
 
 struct ConsecrationSilverState
@@ -60,12 +63,28 @@ struct ConsecrationGoldState
 uint32 constexpr CONSECRATION_XP_GUARD_MS = 8000;
 uint32 constexpr CONSECRATION_SILVER_STATE_TTL_MS = 2000;
 uint32 constexpr CONSECRATION_GOLD_STATE_TTL_MS = 2000;
+uint32 constexpr SPELL_PALADIN_HOLY_SHIELD_RANK_1 = 20925;
 
 // Tracks enemies temporarily weakened while they stand in Consecration.
 std::unordered_map<uint32, ConsecrationSilverState> ConsecrationSilverStates;
 // Tracks temporary paladin self-buff stacks while Consecration is actively hitting enemies.
 std::unordered_map<uint32, ConsecrationGoldState> ConsecrationGoldStates;
 std::mutex SpellMasteryPaladinStateMutex;
+
+uint32 GetHighestKnownSpellInChain(Player* player, uint32 firstRankSpellId)
+{
+    if (!player || !firstRankSpellId || !player->HasSpell(firstRankSpellId))
+        return 0;
+
+    uint32 highestKnownSpellId = firstRankSpellId;
+    for (uint32 spellId = firstRankSpellId; spellId; spellId = sSpellMgr->GetNextSpellInChain(spellId))
+    {
+        if (player->HasSpell(spellId))
+            highestKnownSpellId = spellId;
+    }
+
+    return highestKnownSpellId;
+}
 
 ConsecrationMasteryEffects BuildConsecrationMasteryEffects(SpellMastery::SpellMasteryProgress const& progress, SpellMastery::ManagedSpellConfig const& config)
 {
@@ -94,7 +113,11 @@ ConsecrationMasteryEffects BuildConsecrationMasteryEffects(SpellMastery::SpellMa
     }
 
     if (diamondLevel > 0)
+    {
         effects.DiamondHealPctOfHitDamage = 300.0f + (float(diamondLevel - 1) * (600.0f / 9.0f));
+        effects.DiamondHealPctOfSpellPower = 4.0f + (float(diamondLevel - 1) * (8.0f / 9.0f)); // 4% -> 12%
+        effects.DiamondHolyShieldRefresh = true;
+    }
 
     return effects;
 }
@@ -314,6 +337,7 @@ class spell_pal_consecration_mastery_aura : public AuraScript
 
         _progress = SpellMastery::GetOrLoadSpellMasteryProgress(_playerCaster, *_config);
         _effects = BuildConsecrationMasteryEffects(_progress, *_config);
+        _holyShieldSpellId = GetHighestKnownSpellInChain(_playerCaster, SPELL_PALADIN_HOLY_SHIELD_RANK_1);
         return true;
     }
 
@@ -352,17 +376,25 @@ class spell_pal_consecration_mastery_aura : public AuraScript
             return;
 
         int32 const tickDamage = std::max<int32>(1, aurEff->GetAmount());
-        int32 const healAmount = std::max<int32>(1, int32(std::lround((float(tickDamage) * _effects.DiamondHealPctOfHitDamage) / 100.0f)));
+        int32 const damageBasedHeal = int32(std::lround((float(tickDamage) * _effects.DiamondHealPctOfHitDamage) / 100.0f));
+        int32 const spellPower = std::max<int32>(0, _playerCaster->SpellBaseDamageBonusDone(SPELL_SCHOOL_MASK_HOLY));
+        int32 const spellPowerHeal = int32(std::lround((float(spellPower) * _effects.DiamondHealPctOfSpellPower) / 100.0f));
+        int32 const healAmount = std::max<int32>(1, damageBasedHeal + spellPowerHeal);
         HealInfo healInfo(_playerCaster, _playerCaster, uint32(healAmount), GetSpellInfo(), GetSpellInfo()->GetSchoolMask());
         _playerCaster->HealBySpell(healInfo);
+
+        if (_effects.DiamondHolyShieldRefresh && _holyShieldSpellId && !_playerCaster->HasAura(_holyShieldSpellId))
+            _playerCaster->CastSpell(_playerCaster, _holyShieldSpellId, true);
 
         if (_playerCaster->GetSession() && SpellMastery::IsSpellMasteryFeedEnabled())
         {
             ChatHandler(_playerCaster->GetSession()).PSendSysMessage(
-                "[SM Cons] tick={} heal={} pct={:.1f}%",
+                "[SM Cons] tick={} heal={} tickPct={:.1f}% sp={} spPct={:.1f}%",
                 tickDamage,
                 healAmount,
-                _effects.DiamondHealPctOfHitDamage);
+                _effects.DiamondHealPctOfHitDamage,
+                spellPower,
+                _effects.DiamondHealPctOfSpellPower);
         }
     }
 
@@ -377,6 +409,7 @@ private:
     SpellMastery::ManagedSpellConfig const* _config = nullptr;
     SpellMastery::SpellMasteryProgress _progress;
     ConsecrationMasteryEffects _effects;
+    uint32 _holyShieldSpellId = 0;
 };
 
 class spell_mastery_prepare_paladin_spell_script : public AllSpellScript

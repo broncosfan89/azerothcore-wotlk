@@ -68,7 +68,7 @@ Source: `src/server/scripts/World/spell_mastery_mage.cpp`
 - Iron/Global: damage bonus = `20*Iron + 20*Bronze + 20*Silver + 25*Gold + 30*Diamond`.
 - Bronze: crit chance `5% -> 23%`.
 - Silver: splash damage `35% -> 80%`.
-- Gold: burn contribution `10% -> 25%` of direct hit.
+- Gold: burn contribution `10% -> 25%` of direct hit (effective `6% -> 15%` after global Ignite multiplier).
 - Diamond: cast-time multiplier `0.05 -> 0.01`.
 
 ### Pyroblast
@@ -76,7 +76,7 @@ Source: `src/server/scripts/World/spell_mastery_mage.cpp`
 - Iron/Global: damage bonus = `2 * Total mastery levels`.
 - Bronze: crit chance `5% -> 23%`.
 - Silver: splash damage `35% -> 80%`.
-- Gold: burn contribution `20% -> 50%`.
+- Gold: burn contribution `20% -> 50%` (effective `12% -> 30%` after global Ignite multiplier).
 - Diamond: cast-time multiplier `0.05 -> 0.01`.
 
 ### Flamestrike
@@ -84,8 +84,10 @@ Source: `src/server/scripts/World/spell_mastery_mage.cpp`
 - Iron/Global: damage bonus = `20*Iron + 20*Bronze + 20*Silver + 25*Gold + 30*Diamond`.
 - Bronze: radius multiplier `x1.05 -> x1.50`.
 - Silver: extra damage pass `8% -> 22%`.
-- Gold: burn damage `10% -> 25%`, max stacks up to `8`.
+- Gold: burn damage `10% -> 25%` (effective `6% -> 15%` after global Ignite multiplier), max stacks up to `8`.
 - Diamond: cast-time multiplier `0.80 -> 0.10`.
+
+- Global Ignite pool multiplier: `x0.60` applied to all scripted Ignite additions.
 
 ### Frostbolt
 
@@ -121,11 +123,11 @@ Source: `src/server/scripts/World/spell_mastery_mage.cpp`
 
 ### Arcane Blast
 
-- Iron: damage bonus `8% -> 80%`.
+- Iron: damage bonus `6.4% -> 64%`.
 - Bronze: mana refund `4% -> 14%`.
-- Silver: per-charge bonus `4% -> 12%`.
-- Gold: 4-charge bonus `10% -> 30%`.
-- Diamond: 4-charge splash `20% -> 50%`.
+- Silver: per-charge bonus `3.2% -> 9.6%`.
+- Gold: 4-charge bonus `8% -> 24%`.
+- Diamond: 4-charge splash `16% -> 40%`.
 
 ### Arcane Missiles
 
@@ -179,11 +181,11 @@ Source: `src/server/scripts/World/spell_mastery_priest.cpp`
 
 ### Power Word: Shield
 
-- Iron/Global: shield bonus = `39.2 * Total mastery levels` percent.
+- Iron/Global: shield bonus = `15.68 * Total mastery levels` percent.
 - Bronze: Weakened Soul reduction up to `60%`.
-- Silver: HoT per tick `2.8% -> 28%`.
-- Gold: reflect `21% -> 75%`.
-- Diamond: end-heal `10% -> 100%`, radius `11 -> 20`.
+- Silver: HoT per tick `1.12% -> 11.2%`.
+- Gold: reflect `8.4% -> 30%`.
+- Diamond: end-heal `7.6% -> 40%`, radius `11 -> 20`.
 
 ### Penance
 
@@ -215,7 +217,10 @@ Source: `src/server/scripts/World/spell_mastery_paladin.cpp`
 - Gold:
   - max stacks = Gold level
   - per-stack damage bonus = `1.0 + 0.2*Gold` percent.
-- Diamond: heal from dealt hit damage `300% -> 900%`.
+- Diamond:
+  - heal from dealt hit damage `300% -> 900%`.
+  - bonus self-heal from Holy spell power `4% -> 12%` per periodic hit.
+  - refreshes Holy Shield while Consecration ticks (if the paladin knows Holy Shield).
 
 ## Warrior
 

@@ -211,6 +211,7 @@ uint32 constexpr FLAMESTRIKE_BURN_STATE_TTL_MS = 15000;
 uint32 constexpr FLAMESTRIKE_XP_GUARD_MS = 800;
 uint32 constexpr IGNITE_CARRY_TTL_MS = 750;
 int32 constexpr IGNITE_FAST_TICK_INTERVAL_MS = 500;
+float constexpr IGNITE_DAMAGE_MULTIPLIER = 0.60f;
 uint32 constexpr SPELL_MAGE_IGNITE_TALENT_RANK_1 = 11119;
 int32 constexpr PYROBLAST_IGNITE_BASE_DURATION_MS = 6000;
 int32 constexpr PYROBLAST_IGNITE_DURATION_EXTEND_MS = 1000;
@@ -402,6 +403,8 @@ void ApplyStackingIgniteDot(Player* caster, Unit* target, int32 addPerTick, int3
     if (!caster || !target || addPerTick <= 0 || baseDurationMs <= 0 || capDurationMs <= 0)
         return;
 
+    int32 const scaledAddPerTick = std::max<int32>(1, int32(std::lround(float(addPerTick) * IGNITE_DAMAGE_MULTIPLIER)));
+
     int32 previousTickAmount = 0;
     AuraEffect* currentIgniteEffect = nullptr;
     int32 priorMaxDuration = baseDurationMs;
@@ -415,7 +418,7 @@ void ApplyStackingIgniteDot(Player* caster, Unit* target, int32 addPerTick, int3
             previousTickAmount = std::max<int32>(0, currentIgniteEffect->GetAmount());
     }
 
-    int32 const stackedPerTick = std::max<int32>(1, previousTickAmount + addPerTick);
+    int32 const stackedPerTick = std::max<int32>(1, previousTickAmount + scaledAddPerTick);
 
     caster->CastCustomSpell(
         SpellMastery::SPELL_MAGE_IGNITE,
@@ -450,13 +453,13 @@ void ApplyStackingIgniteDot(Player* caster, Unit* target, int32 addPerTick, int3
             "[SM DBG] {} src={} pct={:.1f} prev={} add={} new={} applied={} dur={}/{}",
             debugTag,
             sourceDamage,
-            sourcePct,
-            previousTickAmount,
-            addPerTick,
-            stackedPerTick,
-            appliedTickAmount,
-            appliedDuration,
-            appliedMaxDuration);
+                sourcePct,
+                previousTickAmount,
+                scaledAddPerTick,
+                stackedPerTick,
+                appliedTickAmount,
+                appliedDuration,
+                appliedMaxDuration);
     }
 }
 
@@ -698,19 +701,19 @@ ArcaneBlastMasteryEffects BuildArcaneBlastMasteryEffects(SpellMastery::SpellMast
     uint8 goldLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_GOLD, config);
     uint8 diamondLevel = SpellMastery::GetEffectiveTierLevel(progress, SpellMastery::SPELL_MASTERY_TIER_DIAMOND, config);
 
-    effects.IronDamageBonusPct = float(ironLevel) * 8.0f;
+    effects.IronDamageBonusPct = float(ironLevel) * 6.4f;
 
     if (bronzeLevel > 0)
         effects.BronzeManaRefundPct = 4.0f + (float(bronzeLevel - 1) * (10.0f / 9.0f));
 
     if (silverLevel > 0)
-        effects.SilverPerChargeBonusPct = 4.0f + (float(silverLevel - 1) * (8.0f / 9.0f));
+        effects.SilverPerChargeBonusPct = 3.2f + (float(silverLevel - 1) * (6.4f / 9.0f));
 
     if (goldLevel > 0)
-        effects.GoldAtFourChargesBonusPct = 10.0f + (float(goldLevel - 1) * (20.0f / 9.0f));
+        effects.GoldAtFourChargesBonusPct = 8.0f + (float(goldLevel - 1) * (16.0f / 9.0f));
 
     if (diamondLevel > 0)
-        effects.DiamondAtFourChargesSplashPct = 20.0f + (float(diamondLevel - 1) * (30.0f / 9.0f));
+        effects.DiamondAtFourChargesSplashPct = 16.0f + (float(diamondLevel - 1) * (24.0f / 9.0f));
 
     return effects;
 }
